@@ -8,7 +8,7 @@ package com.sky.ps5cheatfinder
 object AobScanner {
     private data class Token(val value: Int?, val wildcard: Boolean)
 
-    fun parse(pattern: String): List<Token> {
+    private fun parse(pattern: String): List<Token> {
         val parts = pattern.trim().split(Regex("[\\s,]+")).filter { it.isNotBlank() }
         require(parts.isNotEmpty()) { "Enter a byte pattern, e.g. 48 8B ?? 01." }
         require(parts.size <= 128) { "Pattern is limited to 128 bytes." }
