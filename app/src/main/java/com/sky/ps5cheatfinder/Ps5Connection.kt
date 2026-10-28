@@ -1,0 +1,32 @@
+package com.sky.ps5cheatfinder
+
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import java.io.EOFException
+import java.net.Socket
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+class Ps5Connection(private val ip: String, private val port: Int = 744) {
+    private var socket: Socket? = null
+    private var input: BufferedInputStream? = null
+    private var output: BufferedOutputStream? = null
+    fun connect(): Boolean = try { val s = Socket(ip, port); s.soTimeout = 10_000; s.tcpNoDelay = true; socket = s; input = BufferedInputStream(s.getInputStream()); output = BufferedOutputStream(s.getOutputStream()); true } catch (_: Exception) { false }
+    fun disconnect() { try { socket?.close() } catch (_: Exception) {}; socket = null; input = null; output = null }
+    fun listProcesses(): List<Pair<String, Int>> { sendCommand(CMD_PROC_LIST); if (readStatus() != WIRE_SUCCESS) return emptyList(); val count = readInt(); return (0 until count).map { String(readBytes(32)).substringBefore('\u0000') to readInt() } }
+    fun findPid(processName: String): Int? = listProcesses().firstOrNull { it.first == processName }?.second
+    fun readMemory(pid: Int, address: Long, size: Int): ByteArray? { val body = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).putInt(pid).putLong(address).putInt(size).array(); sendCommand(CMD_PROC_READ, body); if (readStatus() != WIRE_SUCCESS) return null; return readBytes(size) }
+    fun writeMemory(pid: Int, address: Long, data: ByteArray): Boolean { val body = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).putInt(pid).putLong(address).putInt(data.size).array(); sendCommand(CMD_PROC_WRITE, body); if (readStatus() != WIRE_SUCCESS) return false; sendRaw(data); return readStatus() == WIRE_SUCCESS }
+    fun scanExact(pid: Int, type: ValueType, valueBytes: ByteArray): List<Long> {
+        val body = ByteBuffer.allocate(10).order(ByteOrder.LITTLE_ENDIAN).putInt(pid).put(type.wireCode.toByte()).put(COMPARE_EXACT.toByte()).putInt(valueBytes.size).array()
+        sendCommand(CMD_PROC_SCAN, body); if (readStatus() != WIRE_SUCCESS) return emptyList(); sendRaw(valueBytes); if (readStatus() != WIRE_SUCCESS) return emptyList()
+        val results = ArrayList<Long>(); while (true) { val address = readLong(); if (address == END_OF_LIST) break; results.add(address) }; return results
+    }
+    private fun sendCommand(cmd: Int, body: ByteArray = ByteArray(0)) { val header = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN).putInt(PACKET_MAGIC).putInt(cmd).putInt(body.size).array(); sendRaw(header); if (body.isNotEmpty()) sendRaw(body) }
+    private fun sendRaw(data: ByteArray) { val out = output ?: error("Not connected"); out.write(data); out.flush() }
+    private fun readBytes(count: Int): ByteArray { val stream = input ?: error("Not connected"); val buffer = ByteArray(count); var got = 0; while (got < count) { val n = stream.read(buffer, got, count - got); if (n < 0) throw EOFException("PS5 closed the connection"); got += n }; return buffer }
+    private fun readInt(): Int = ByteBuffer.wrap(readBytes(4)).order(ByteOrder.LITTLE_ENDIAN).int
+    private fun readLong(): Long = ByteBuffer.wrap(readBytes(8)).order(ByteOrder.LITTLE_ENDIAN).long
+    private fun readStatus(): Int = readInt()
+    companion object { val PACKET_MAGIC = 0xFFAABBCC.toInt(); val CMD_PROC_LIST = 0xBDAA0001.toInt(); val CMD_PROC_READ = 0xBDAA0002.toInt(); val CMD_PROC_WRITE = 0xBDAA0003.toInt(); val CMD_PROC_SCAN = 0xBDAA0009.toInt(); val WIRE_SUCCESS = 0x80000000.toInt(); const val END_OF_LIST = -1L; const val COMPARE_EXACT = 0 }
+}
