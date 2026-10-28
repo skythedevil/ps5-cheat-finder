@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -43,12 +44,20 @@ fun AppScreen() {
     var newValue by remember { mutableStateOf("") }
     var count by remember { mutableIntStateOf(0) }
     var logText by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
     val table = remember { mutableStateListOf<CheatEntry>() }
     val types = ValueType.entries
     val modes = CompareMode.entries
     val type = types[typeIndex]
     val mode = modes[modeIndex]
+
+    // AI settings live only in Compose memory; they are not written to files.
+    val aiTypes = AiProviderType.entries
+    var aiIndex by remember { mutableIntStateOf(0) }
+    var aiKey by remember { mutableStateOf("") }
+    var aiModel by remember { mutableStateOf(AiProviderType.GEMINI.defaultModel) }
+    var aiBaseUrl by remember { mutableStateOf("https://api.openai.com/v1") }
+    var aiQuestion by remember { mutableStateOf("") }
+    val aiType = aiTypes[aiIndex]
 
     LaunchedEffect(conn, pid) {
         while (true) {
@@ -165,16 +174,42 @@ fun AppScreen() {
             }) { Text("Load table") }
         }
 
+        // 7. AI help (optional, bring your own provider key).
         Spacer(Modifier.height(12.dp))
-        Text("7. AI helper (optional)", style = MaterialTheme.typography.titleMedium)
-        OutlinedTextField(apiKey, { apiKey = it }, label = { Text("Anthropic API key") }, modifier = Modifier.fillMaxWidth())
+        Text("7. AI help (optional)", style = MaterialTheme.typography.titleMedium)
         Button(onClick = {
-            if (apiKey.isBlank()) { logText += "Enter an API key first.\n"; return@Button }
+            aiIndex = (aiIndex + 1) % aiTypes.size
+            aiModel = aiTypes[(aiIndex + 1) % aiTypes.size].defaultModel
+        }) { Text("Provider: ${aiType.label} (tap to change)") }
+        OutlinedTextField(
+            value = aiKey,
+            onValueChange = { aiKey = it },
+            label = { Text("API key (kept only while app is open)") },
+            visualTransformation = PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(aiModel, { aiModel = it }, label = { Text("Model name") }, modifier = Modifier.fillMaxWidth())
+        if (aiType == AiProviderType.OPENAI_COMPATIBLE) {
+            OutlinedTextField(aiBaseUrl, { aiBaseUrl = it }, label = { Text("Base URL (e.g. https://api.groq.com/openai/v1)") }, modifier = Modifier.fillMaxWidth())
+        }
+        OutlinedTextField(aiQuestion, { aiQuestion = it }, label = { Text("What are you trying to do?") }, modifier = Modifier.fillMaxWidth())
+        Button(onClick = {
+            if (aiKey.isBlank()) { logText += "Enter an API key first.\n"; return@Button }
+            if (aiQuestion.isBlank()) { logText += "Describe what you want to do first.\n"; return@Button }
+            val settings = AiSettings(aiType, aiKey.trim(), aiModel.trim(), aiBaseUrl.trim())
+            val prompt = "This is for an offline single-player PS5 game cheat tool. " +
+                "The user wants to: $aiQuestion. " +
+                "Progress so far:\n$logText\n" +
+                "Suggest the number to search for, what to change in game, and which next-scan type to use " +
+                "(exact, bigger, smaller, increased, decreased, changed, unchanged). Answer in short numbered steps."
+            logText += "Asking ${aiType.label}...\n"
             scope.launch {
-                val reply = withContext(Dispatchers.IO) { AiAssistant(apiKey).suggestNextStep(logText) }
+                val reply = withContext(Dispatchers.IO) { AiClient().ask(settings, prompt) }
                 logText += "AI: $reply\n"
             }
-        }) { Text("Ask AI for next step") }
+        }) { Text("Ask AI") }
+
         Spacer(Modifier.height(12.dp))
         Text("Log:\n$logText")
     }
