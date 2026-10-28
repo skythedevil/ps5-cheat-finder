@@ -22,7 +22,19 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { AppScreen() } }
+        setContent {
+            val colors = lightColorScheme(
+                primary = androidx.compose.ui.graphics.Color(0xFF167D45),
+                onPrimary = androidx.compose.ui.graphics.Color.White,
+                secondary = androidx.compose.ui.graphics.Color(0xFFC62828),
+                onSecondary = androidx.compose.ui.graphics.Color.White,
+                error = androidx.compose.ui.graphics.Color(0xFFB71C1C),
+                onError = androidx.compose.ui.graphics.Color.White,
+                background = androidx.compose.ui.graphics.Color(0xFFF5F8F5),
+                surface = androidx.compose.ui.graphics.Color(0xFFFFFFFF)
+            )
+            MaterialTheme(colorScheme = colors) { AppScreen() }
+        }
     }
 }
 
@@ -71,7 +83,7 @@ fun AppScreen() {
     }
 
     Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
-        Text("PS5 Cheat Finder", style = MaterialTheme.typography.titleLarge)
+        Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
         Text("Status: $status")
         Spacer(Modifier.height(12.dp))
         Text("1. Connect", style = MaterialTheme.typography.titleMedium)
