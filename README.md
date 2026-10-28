@@ -13,6 +13,7 @@ Open **Actions → Build APK**. The workflow builds a debug APK and publishes it
 ## Features
 - Connect to PS5 by IP address and find the running game process
 - Exact first scan and comparative next scans
+- Bounded AOB signature search around up to 300 known scan candidates, with ?? wildcard bytes
 - Integer, float and double value types
 - Cheat table, write values, freeze values, save/load JSON
 - Multi-cheat studio: name multiple cheats, remove draft entries, and export the collection once as GoldHEN/etaHEN JSON, SHN, or MC4
@@ -40,4 +41,4 @@ Tap the Provider button to cycle through Gemini, Claude, and OpenAI-compatible. 
 **Key privacy:** keys are masked while typing and kept only in app memory while the app is open. They are not saved to the cheat-table file or any app file and are not written to app logs. Closing the app clears the key. The key is sent to the provider you selected to authorize the AI request.
 
 ## Important limitations
-Unknown initial-value scans, AOB searches, pointer scans, and a hex viewer/disassembler are not implemented. Export formatting is implemented, but the generated files and AI-suggested offsets have not been validated on a real PS5 for every game/version. AI may not know rare cheats such as double jump and must never be treated as an authoritative source for offsets or restore bytes. Use only verified patch bytes for the exact game build, and back up saves before testing.
+Unknown initial-value scans, whole-process AOB searches, pointer scans, and a hex viewer/disassembler are not implemented. The current AOB feature searches only small windows around known value-scan candidates. Export formatting is implemented, but the generated files and AI-suggested offsets have not been validated on a real PS5 for every game/version. AI may not know rare cheats such as double jump and must never be treated as an authoritative source for offsets or restore bytes. Use only verified patch bytes for the exact game build, and back up saves before testing.
