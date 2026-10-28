@@ -55,6 +55,9 @@ fun AppScreen() {
     var searchText by remember { mutableStateOf("") }
     var newValue by remember { mutableStateOf("") }
     var count by remember { mutableIntStateOf(0) }
+    var aobPattern by remember { mutableStateOf("48 8B ?? ??") }
+    var aobRadius by remember { mutableStateOf("128") }
+    var aobResults by remember { mutableStateOf<List<Long>>(emptyList()) }
     var logText by remember { mutableStateOf("") }
     val table = remember { mutableStateListOf<CheatEntry>() }
     val types = ValueType.entries
@@ -141,7 +144,42 @@ fun AppScreen() {
         if (count > 20) Text("Showing first 20 of $count")
 
         Spacer(Modifier.height(12.dp))
-        Text("4. Change value", style = MaterialTheme.typography.titleMedium)
+        Text("4. AOB signature search (near scan results)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
+        Text("Searches for a byte pattern in a small memory window around your existing value-scan results. This is not a whole-process scan. Use ?? for wildcard bytes.")
+        OutlinedTextField(aobPattern, { aobPattern = it }, label = { Text("Pattern (e.g. 48 8B ?? 01)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(aobRadius, { aobRadius = it }, label = { Text("Radius around each candidate (1–512 bytes)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        Button(onClick = {
+            val c = conn; val p = pid; val s = scanner
+            val radius = aobRadius.toIntOrNull()
+            if (c == null || p == null || s == null) { logText += "Connect, find the game, and run a value scan first.\\n"; return@Button }
+            if (radius == null || radius !in 1..512) { logText += "Radius must be between 1 and 512 bytes.\\n"; return@Button }
+            scope.launch {
+                try {
+                    val seeds = s.candidates.map { it.address }
+                    val results = withContext(Dispatchers.IO) { AobScanner.scanNearCandidates(c, p, seeds, aobPattern, radius) }
+                    aobResults = results
+                    logText += "AOB search found ${results.size} matches near up to 300 anchors.\\n"
+                } catch (e: Exception) {
+                    logText += "AOB search failed: ${e.message ?: "unknown error"}\\n"
+                }
+            }
+        }) { Text("Search pattern near candidates") }
+        if (aobResults.isNotEmpty()) {
+            Text("AOB matches: ${aobResults.size}", style = MaterialTheme.typography.titleSmall)
+            aobResults.take(20).forEach { address ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("0x" + address.toString(16), modifier = Modifier.weight(1f))
+                    Button(onClick = {
+                        if (table.none { it.address == address }) table.add(CheatEntry("AOB " + address.toString(16), address, type))
+                        else logText += "That address is already in the cheat table.\\n"
+                    }) { Text("Add") }
+                }
+            }
+            if (aobResults.size > 20) Text("Showing first 20 of ${aobResults.size} matches.")
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text("5. Change value", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(newValue, { newValue = it }, label = { Text("New value (used by Freeze and Write)") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = {
             val c = conn; val p = pid; val s = scanner
