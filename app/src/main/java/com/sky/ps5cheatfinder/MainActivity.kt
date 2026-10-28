@@ -222,7 +222,8 @@ fun AppScreen() {
             }
         }) { Text("Ask AI") }
 
-        CheatExporterPanel { line -> logText += line + "\n" }
+        val exporterAiSettings = if (aiKey.isNotBlank()) AiSettings(aiType, aiKey.trim(), aiModel.trim(), aiBaseUrl.trim()) else null
+        CheatExporterPanel(aiSettings = exporterAiSettings) { line -> logText += line + "\n" }
 
         Spacer(Modifier.height(12.dp))
         Text("Log:\n$logText")
