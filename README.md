@@ -15,6 +15,9 @@ Open **Actions → Build APK**. The workflow builds a debug APK and publishes it
 - Exact first scan and comparative next scans
 - Integer, float and double value types
 - Cheat table, write values, freeze values, save/load JSON
+- Multi-cheat studio: name multiple cheats, remove draft entries, and export the collection once as GoldHEN/etaHEN JSON, SHN, or MC4
+- Green/red UI theme
+- AI-assisted cheat-file drafting from the selected provider; AI output is treated as an unverified draft and must be checked independently
 - Optional AI help through Gemini, Claude, OpenAI, Groq, OpenRouter, or another OpenAI-compatible service
 
 ## Set up Gemini AI (free tier may be available)
@@ -36,5 +39,5 @@ Tap the Provider button to cycle through Gemini, Claude, and OpenAI-compatible. 
 
 **Key privacy:** keys are masked while typing and kept only in app memory while the app is open. They are not saved to the cheat-table file or any app file and are not written to app logs. Closing the app clears the key. The key is sent to the provider you selected to authorize the AI request.
 
-## Not yet supported
-Unknown initial-value scans, AOB searches, pointer scans, hex viewer/disassembly, image selection in the app, and verified MC4/SHN export. The app has not been validated against every PS5 firmware/protocol version.
+## Important limitations
+Unknown initial-value scans, AOB searches, pointer scans, and a hex viewer/disassembler are not implemented. Export formatting is implemented, but the generated files and AI-suggested offsets have not been validated on a real PS5 for every game/version. AI may not know rare cheats such as double jump and must never be treated as an authoritative source for offsets or restore bytes. Use only verified patch bytes for the exact game build, and back up saves before testing.
