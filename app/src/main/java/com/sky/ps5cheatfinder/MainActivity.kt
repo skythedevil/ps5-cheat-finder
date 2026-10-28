@@ -1,0 +1,181 @@
+package com.sky.ps5cheatfinder
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { MaterialTheme { AppScreen() } }
+    }
+}
+
+private const val GAME_PROCESS = "eboot.bin"
+private const val CHEAT_FILE_NAME = "cheats.json"
+
+@Composable
+fun AppScreen() {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var ip by remember { mutableStateOf("192.168.1.") }
+    var status by remember { mutableStateOf("Not connected") }
+    var conn by remember { mutableStateOf<Ps5Connection?>(null) }
+    var pid by remember { mutableStateOf<Int?>(null) }
+    var scanner by remember { mutableStateOf<MemoryScanner?>(null) }
+    var typeIndex by remember { mutableIntStateOf(4) }
+    var modeIndex by remember { mutableIntStateOf(0) }
+    var searchText by remember { mutableStateOf("") }
+    var newValue by remember { mutableStateOf("") }
+    var count by remember { mutableIntStateOf(0) }
+    var logText by remember { mutableStateOf("") }
+    var apiKey by remember { mutableStateOf("") }
+    val table = remember { mutableStateListOf<CheatEntry>() }
+    val types = ValueType.entries
+    val modes = CompareMode.entries
+    val type = types[typeIndex]
+    val mode = modes[modeIndex]
+
+    LaunchedEffect(conn, pid) {
+        while (true) {
+            val c = conn
+            val p = pid
+            if (c != null && p != null && table.any { it.lockedValue != null }) {
+                withContext(Dispatchers.IO) { Freezer.applyLocks(c, p, table.toList()) }
+            }
+            delay(300)
+        }
+    }
+
+    Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
+        Text("PS5 Cheat Finder", style = MaterialTheme.typography.titleLarge)
+        Text("Status: $status")
+        Spacer(Modifier.height(12.dp))
+        Text("1. Connect", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(ip, { ip = it }, label = { Text("PS5 IP address") }, modifier = Modifier.fillMaxWidth())
+        Button(onClick = {
+            scope.launch {
+                val c = Ps5Connection(ip)
+                val ok = withContext(Dispatchers.IO) { c.connect() }
+                if (ok) { conn = c; status = "Connected" } else status = "Could not connect (is ps5debug-NG running?)"
+            }
+        }) { Text("Connect") }
+        Button(onClick = {
+            val c = conn
+            if (c == null) { logText += "Connect first.\n"; return@Button }
+            scope.launch {
+                val found = withContext(Dispatchers.IO) { c.findPid(GAME_PROCESS) }
+                if (found != null) { pid = found; logText += "Found $GAME_PROCESS, pid $found\n" }
+                else logText += "$GAME_PROCESS not found. Start the game first.\n"
+            }
+        }) { Text("Find game") }
+
+        Spacer(Modifier.height(12.dp))
+        Text("2. Search", style = MaterialTheme.typography.titleMedium)
+        Button(onClick = { typeIndex = (typeIndex + 1) % types.size }) { Text("Value type: ${type.label} (tap to change)") }
+        Button(onClick = { modeIndex = (modeIndex + 1) % modes.size }) { Text("Next-scan compare: ${mode.label} (tap to change)") }
+        OutlinedTextField(searchText, { searchText = it }, label = { Text("Value you see in game") }, modifier = Modifier.fillMaxWidth())
+        Button(onClick = {
+            val c = conn; val p = pid
+            if (c == null || p == null) { logText += "Connect and find the game first.\n"; return@Button }
+            scope.launch {
+                val s = MemoryScanner(c, p, type)
+                val n = withContext(Dispatchers.IO) { s.firstScan(searchText) }
+                if (n < 0) { logText += "Type a valid number first.\n"; return@launch }
+                scanner = s; count = n; logText += "First scan (exact): $n results\n"
+            }
+        }) { Text("First scan (exact value)") }
+        Button(onClick = {
+            val s = scanner
+            if (s == null) { logText += "Do a first scan first.\n"; return@Button }
+            scope.launch {
+                val n = withContext(Dispatchers.IO) { s.nextScan(mode, searchText) }
+                if (n < 0) { logText += "This compare needs a valid number in the box.\n"; return@launch }
+                count = n; logText += "Next scan (${mode.label}): $n results\n"
+            }
+        }) { Text("Next scan") }
+
+        Spacer(Modifier.height(12.dp))
+        Text("3. Results: $count", style = MaterialTheme.typography.titleMedium)
+        scanner?.candidates?.take(20)?.forEach { cand ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("0x" + cand.address.toString(16) + "  last: " + type.toText(cand.lastBytes), modifier = Modifier.weight(1f))
+                Button(onClick = { table.add(CheatEntry("Found " + cand.address.toString(16), cand.address, type)) }) { Text("Add") }
+            }
+        }
+        if (count > 20) Text("Showing first 20 of $count")
+
+        Spacer(Modifier.height(12.dp))
+        Text("4. Change value", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(newValue, { newValue = it }, label = { Text("New value (used by Freeze and Write)") }, modifier = Modifier.fillMaxWidth())
+        Button(onClick = {
+            val c = conn; val p = pid; val s = scanner
+            if (c == null || p == null || s == null) { logText += "Do a scan first.\n"; return@Button }
+            scope.launch {
+                val n = withContext(Dispatchers.IO) { s.writeToAll(newValue) }
+                if (n < 0) logText += "Type a valid new value first.\n" else logText += "Wrote $newValue to $n addresses\n"
+            }
+        }) { Text("Write new value to all results") }
+
+        Spacer(Modifier.height(12.dp))
+        Text("5. Cheat table", style = MaterialTheme.typography.titleMedium)
+        if (table.isEmpty()) Text("Empty. Add addresses from the results above.")
+        table.forEachIndexed { index, entry ->
+            Column(Modifier.padding(vertical = 4.dp)) {
+                Text("${entry.label}  0x${entry.address.toString(16)}  (${entry.type.label})")
+                Text(if (entry.lockedValue == null) "Not frozen" else "Frozen at ${entry.lockedValue}")
+                Row {
+                    Button(onClick = {
+                        if (entry.lockedValue != null) table[index] = entry.copy(lockedValue = null)
+                        else if (newValue.isBlank() || entry.type.encode(newValue) == null) logText += "Type a valid New value first.\n"
+                        else table[index] = entry.copy(lockedValue = newValue)
+                    }) { Text(if (entry.lockedValue == null) "Freeze" else "Unfreeze") }
+                    Button(onClick = { table.removeAt(index) }) { Text("Delete") }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text("6. Save and load", style = MaterialTheme.typography.titleMedium)
+        Row {
+            Button(onClick = {
+                try { File(context.filesDir, CHEAT_FILE_NAME).writeText(CheatFile.toJson(table.toList())); logText += "Saved ${table.size} entries\n" }
+                catch (e: Exception) { logText += "Save failed: ${e.message}\n" }
+            }) { Text("Save table") }
+            Button(onClick = {
+                try {
+                    val file = File(context.filesDir, CHEAT_FILE_NAME)
+                    if (!file.exists()) { logText += "No saved file yet.\n"; return@Button }
+                    table.clear(); table.addAll(CheatFile.fromJson(file.readText())); logText += "Loaded ${table.size} entries\n"
+                } catch (e: Exception) { logText += "Load failed: ${e.message}\n" }
+            }) { Text("Load table") }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text("7. AI helper (optional)", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(apiKey, { apiKey = it }, label = { Text("Anthropic API key") }, modifier = Modifier.fillMaxWidth())
+        Button(onClick = {
+            if (apiKey.isBlank()) { logText += "Enter an API key first.\n"; return@Button }
+            scope.launch {
+                val reply = withContext(Dispatchers.IO) { AiAssistant(apiKey).suggestNextStep(logText) }
+                logText += "AI: $reply\n"
+            }
+        }) { Text("Ask AI for next step") }
+        Spacer(Modifier.height(12.dp))
+        Text("Log:\n$logText")
+    }
+}
