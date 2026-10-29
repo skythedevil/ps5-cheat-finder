@@ -68,7 +68,7 @@ object DashboardServer {
             }
             val body = when {
                 isApi -> DashboardData.json()
-                isAction -> "{\\"queued\\":true}"
+                isAction -> "{\\\"queued\\\":true}"
                 else -> PAGE
             }
             val bytes = body.toByteArray(StandardCharsets.UTF_8)
