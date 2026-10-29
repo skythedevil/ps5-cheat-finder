@@ -85,6 +85,74 @@ fun AppScreen() {
     var aiQuestion by remember { mutableStateOf("") }
     val aiType = aiTypes[aiIndex]
 
+    LaunchedEffect(Unit) {
+        while (true) {
+            val action = DashboardData.pollAction()
+            if (action != null) {
+                when (action.action) {
+                    "find" -> scope.launch {
+                        val c = conn
+                        if (c == null) {
+                            gameMessage = "Not connected. Connect to PS5 in the Android app first."
+                            status = "Not connected"
+                        } else {
+                            findingGame = true
+                            try {
+                                val processes = withContext(Dispatchers.IO) { c.listProcesses() }
+                                val found = processes.firstOrNull { it.first.equals(GAME_PROCESS, ignoreCase = true) }?.second
+                                if (found != null) {
+                                    pid = found; scanner = null; count = 0
+                                    gameMessage = "Game found: $GAME_PROCESS (PID $found)."
+                                    status = "Connected · game found"
+                                } else {
+                                    gameMessage = "$GAME_PROCESS not found. Launch GTA V and try again."
+                                }
+                            } catch (e: Exception) {
+                                gameMessage = "Find game failed: ${e.message ?: e.javaClass.simpleName}"
+                            } finally { findingGame = false }
+                        }
+                    }
+                    "type" -> action.value.toIntOrNull()?.let { typeIndex = it.coerceIn(0, types.lastIndex) }
+                    "mode" -> action.value.toIntOrNull()?.let { modeIndex = it.coerceIn(0, modes.lastIndex) }
+                    "first" -> {
+                        searchText = action.value
+                        scope.launch {
+                            val c = conn; val p = pid
+                            if (c == null || p == null) {
+                                scanMessage = "Connect and find the game in the Android app first."
+                            } else {
+                                val selectedType = types[typeIndex]
+                                val s = MemoryScanner(c, p, selectedType)
+                                try {
+                                    val n = withContext(Dispatchers.IO) { s.firstScan(action.value) }
+                                    if (n < 0) scanMessage = "Enter a valid number for ${selectedType.label}."
+                                    else { scanner = s; count = n; scanMessage = "First scan complete: $n candidates." }
+                                } catch (e: Exception) {
+                                    scanMessage = "First scan failed: ${e.message ?: e.javaClass.simpleName}"
+                                }
+                            }
+                        }
+                    }
+                    "next" -> {
+                        searchText = action.value
+                        scope.launch {
+                            val s = scanner
+                            if (s == null) scanMessage = "Run First scan before Next scan."
+                            else try {
+                                val n = withContext(Dispatchers.IO) { s.nextScan(modes[modeIndex], action.value) }
+                                if (n < 0) scanMessage = "Enter a valid comparison value."
+                                else { count = n; scanMessage = "Next scan complete: $n candidates." }
+                            } catch (e: Exception) {
+                                scanMessage = "Next scan failed: ${e.message ?: e.javaClass.simpleName}"
+                            }
+                        }
+                    }
+                }
+            }
+            delay(150)
+        }
+    }
+
     LaunchedEffect(conn, pid) {
         while (true) {
             val c = conn
