@@ -79,10 +79,11 @@ fun AppScreen() {
 
     // AI settings live only in Compose memory; they are not written to files.
     val aiTypes = AiProviderType.entries
-    var aiIndex by remember { mutableIntStateOf(0) }
+    var aiIndex by remember { mutableIntStateOf(AiProviderType.OPENROUTER.ordinal) }
     var aiKey by remember { mutableStateOf("") }
-    var aiModel by remember { mutableStateOf(AiProviderType.GEMINI.defaultModel) }
-    var aiBaseUrl by remember { mutableStateOf("https://api.openai.com/v1") }
+    var aiModel by remember { mutableStateOf(AiProviderType.OPENROUTER.defaultModel) }
+    var aiBaseUrl by remember { mutableStateOf("https://openrouter.ai/api/v1") }
+    var aiTesting by remember { mutableStateOf(false) }
     var aiQuestion by remember { mutableStateOf("") }
     val aiType = aiTypes[aiIndex]
 
@@ -376,8 +377,15 @@ fun AppScreen() {
         Spacer(Modifier.height(12.dp))
         Text("7. AI help (optional)", style = MaterialTheme.typography.titleMedium)
         Button(onClick = {
-            aiIndex = (aiIndex + 1) % aiTypes.size
-            aiModel = aiTypes[(aiIndex + 1) % aiTypes.size].defaultModel
+            val nextIndex = (aiIndex + 1) % aiTypes.size
+            val nextType = aiTypes[nextIndex]
+            aiIndex = nextIndex
+            aiModel = nextType.defaultModel
+            aiBaseUrl = if (nextType == AiProviderType.OPENROUTER) {
+                "https://openrouter.ai/api/v1"
+            } else {
+                "https://api.openai.com/v1"
+            }
         }) { Text("Provider: ${aiType.label} (tap to change)") }
         OutlinedTextField(
             value = aiKey,
@@ -388,8 +396,27 @@ fun AppScreen() {
             modifier = Modifier.fillMaxWidth()
         )
         OutlinedTextField(aiModel, { aiModel = it }, label = { Text("Model name") }, modifier = Modifier.fillMaxWidth())
-        if (aiType == AiProviderType.OPENAI_COMPATIBLE) {
+        if (aiType == AiProviderType.OPENROUTER) {
+            Text("OpenRouter endpoint: https://openrouter.ai/api/v1 · Auto-selected model", style = MaterialTheme.typography.bodySmall)
+        } else if (aiType == AiProviderType.OPENAI_COMPATIBLE) {
             OutlinedTextField(aiBaseUrl, { aiBaseUrl = it }, label = { Text("Base URL (e.g. https://api.groq.com/openai/v1)") }, modifier = Modifier.fillMaxWidth())
+        }
+        if (aiType == AiProviderType.OPENROUTER) {
+            OutlinedButton(
+                enabled = !aiTesting && aiKey.isNotBlank(),
+                onClick = {
+                    aiTesting = true
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            try { AiClient().testOpenRouterKey(aiKey.trim()) }
+                            catch (e: Exception) { "OpenRouter test failed: ${e.message ?: e.javaClass.simpleName}" }
+                        }
+                        logText += "$result\\n"
+                        aiTesting = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (aiTesting) "Testing OpenRouter key…" else "Test OpenRouter API key") }
         }
         OutlinedTextField(aiQuestion, { aiQuestion = it }, label = { Text("What are you trying to do?") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = {
