@@ -210,7 +210,7 @@ fun AppScreen() {
         }) { Text("Next scan") }
 
         Spacer(Modifier.height(12.dp))
-        Text("3. Results: $count", style = MaterialTheme.typography.titleMedium)
+        Text("3. Results: $count" + if (count in 1..9) " · live refresh #$resultVersion" else "", style = MaterialTheme.typography.titleMedium)
         if (count in 1..9) Text("Live values update automatically. ‘scan’ is the comparison baseline; ‘now’ is the latest read.", style = MaterialTheme.typography.bodySmall)
         scanner?.candidates?.take(20)?.forEach { cand ->
             Row(verticalAlignment = Alignment.CenterVertically) {
