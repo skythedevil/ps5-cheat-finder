@@ -7,6 +7,8 @@ import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+data class ProcessInfo(val pid: Int, val name: String, val path: String, val titleId: String, val contentId: String)
+
 class Ps5Connection(private val ip: String, private val port: Int = 744) {
     private var socket: Socket? = null
     private var input: BufferedInputStream? = null
