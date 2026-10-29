@@ -104,6 +104,7 @@ fun AppScreen() {
                                 if (found != null) {
                                     pid = found; scanner = null; count = 0
                                     gameMessage = "Game found: $GAME_PROCESS (PID $found)."
+                                    gameInfo = try { withContext(Dispatchers.IO) { c.processInfo(found) }.let { "Name: ${it.name} · Path: ${it.path} · Title ID: ${it.titleId} · Content ID: ${it.contentId}" } } catch (e: Exception) { "PID $found found. Metadata unavailable: ${e.message ?: e.javaClass.simpleName}" }
                                     status = "Connected · game found"
                                 } else {
                                     gameMessage = "$GAME_PROCESS not found. Launch GTA V and try again."
@@ -181,7 +182,7 @@ fun AppScreen() {
             } ?: emptyList()
             DashboardData.update(
                 if (p != null) "Game found · PID $p" else if (conn != null) status else "Not connected",
-                p, type.label, count, rows, if (scanMessage.startsWith("First scan failed") || scanMessage.startsWith("Next scan failed")) scanMessage else if (scanMessage != "Enter a value visible in-game, then run First scan.") scanMessage else gameMessage
+                p, type.label, count, rows, if (scanMessage.startsWith("First scan failed") || scanMessage.startsWith("Next scan failed")) scanMessage else if (scanMessage != "Enter a value visible in-game, then run First scan.") scanMessage else gameMessage, gameInfo
             )
             delay(700)
         }
@@ -222,6 +223,7 @@ fun AppScreen() {
                             scanner = null
                             count = 0
                             gameMessage = "Game found: $GAME_PROCESS (PID $found). You can run First scan."
+                            gameInfo = try { withContext(Dispatchers.IO) { c.processInfo(found) }.let { "Name: ${it.name} · Path: ${it.path} · Title ID: ${it.titleId} · Content ID: ${it.contentId}" } } catch (e: Exception) { "PID $found found. Metadata unavailable: ${e.message ?: e.javaClass.simpleName}" }
                             logText += "Found $GAME_PROCESS, PID $found.\\n"
                         } else {
                             gameMessage = "No $GAME_PROCESS found. Launch the game on PS5, then tap Find game again."
