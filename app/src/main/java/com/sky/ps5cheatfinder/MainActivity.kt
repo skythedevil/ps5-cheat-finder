@@ -166,13 +166,15 @@ fun AppScreen() {
                             } else {
                                 val selectedType = types[typeIndex]
                                 val s = MemoryScanner(c, p, selectedType)
+                                isScanning = true
+                                scanMessage = "First scan running… keep this app open. PS5Debug returns results when the scan finishes."
                                 try {
                                     val n = withContext(Dispatchers.IO) { s.firstScan(action.value) }
-                                    if (n < 0) scanMessage = "Enter a valid number for ${selectedType.label}."
+                                    if (n < 0) scanMessage = "Invalid number for ${selectedType.label}. Enter a valid value and retry."
                                     else { scanner = s; count = n; scanMessage = "First scan complete: $n candidates." }
                                 } catch (e: Exception) {
-                                    scanMessage = "First scan failed: ${e.message ?: e.javaClass.simpleName}"
-                                }
+                                    scanMessage = "First scan failed: ${e.message ?: e.javaClass.simpleName}. Reconnect to PS5 before retrying."
+                                } finally { isScanning = false }
                             }
                         }
                     }
