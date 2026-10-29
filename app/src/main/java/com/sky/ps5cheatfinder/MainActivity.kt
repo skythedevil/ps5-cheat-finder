@@ -108,7 +108,7 @@ fun AppScreen() {
                 } catch (_: Exception) { }
             }
             val rows = s?.candidates?.takeIf { it.size < 10 }?.map {
-                DashboardRow(it.address, type.toText(it.lastBytes), type.toText(it.currentBytes))
+                DashboardRow(it.address, s.type.toText(it.lastBytes), s.type.toText(it.currentBytes))
             } ?: emptyList()
             DashboardData.update(
                 if (p != null) "Game found · PID $p" else if (conn != null) status else "Not connected",
