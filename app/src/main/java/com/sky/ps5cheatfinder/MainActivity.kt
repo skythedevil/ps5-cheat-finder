@@ -53,6 +53,8 @@ fun AppScreen() {
     val context = LocalContext.current
     var ip by remember { mutableStateOf("192.168.1.") }
     var status by remember { mutableStateOf("Not connected") }
+    var gameMessage by remember { mutableStateOf("Connect to your PS5, launch the game, then tap Find game.") }
+    var findingGame by remember { mutableStateOf(false) }
     var conn by remember { mutableStateOf<Ps5Connection?>(null) }
     var pid by remember { mutableStateOf<Int?>(null) }
     var scanner by remember { mutableStateOf<MemoryScanner?>(null) }
@@ -104,27 +106,43 @@ fun AppScreen() {
                 if (ok) { conn = c; status = "Connected" } else status = "Could not connect (is ps5debug-NG running?)"
             }
         }) { Text("Connect") }
-        Button(onClick = {
-            val c = conn
-            if (c == null) { logText += "Connect first.\n"; return@Button }
-            scope.launch {
-                try {
-                    val processes = withContext(Dispatchers.IO) { c.listProcesses() }
-                    val found = processes.firstOrNull { it.first.equals(GAME_PROCESS, ignoreCase = true) }?.second
-                    if (found != null) {
-                        pid = found
-                        scanner = null
-                        count = 0
-                        logText += "Found $GAME_PROCESS, pid $found\n"
-                    } else {
-                        logText += "$GAME_PROCESS not found in ${processes.size} listed processes. Start the game and check that ps5debug-NG is attached. Processes reported by PS5Debug:\n"
-                        logText += processes.take(40).joinToString("\n") { "${it.first.ifBlank { "(unnamed)" }} (PID ${it.second})" } + "\n"
+        Button(
+            enabled = !findingGame,
+            onClick = {
+                val c = conn
+                if (c == null) {
+                    gameMessage = "Not connected. Enter the PS5 IP and tap Connect first."
+                    logText += "Find game: connect to the PS5 first.\\n"
+                    return@Button
+                }
+                findingGame = true
+                gameMessage = "Checking the PS5 process list…"
+                scope.launch {
+                    try {
+                        val processes = withContext(Dispatchers.IO) { c.listProcesses() }
+                        val found = processes.firstOrNull { it.first.equals(GAME_PROCESS, ignoreCase = true) }?.second
+                        if (found != null) {
+                            pid = found
+                            scanner = null
+                            count = 0
+                            gameMessage = "Game found: $GAME_PROCESS (PID $found). You can run First scan."
+                            logText += "Found $GAME_PROCESS, PID $found.\\n"
+                        } else {
+                            gameMessage = "No $GAME_PROCESS found. Launch the game on PS5, then tap Find game again."
+                            logText += "$GAME_PROCESS not found in ${processes.size} listed processes. Make sure the game is running and PS5Debug-NG is attached. Processes reported by PS5Debug:\\n"
+                            logText += if (processes.isEmpty()) "PS5Debug returned no processes.\\n" else processes.take(40).joinToString("\\n") { "${it.first.ifBlank { "(unnamed)" }} (PID ${it.second})" } + "\\n"
+                        }
+                    } catch (e: Exception) {
+                        val error = e.message ?: e.javaClass.simpleName
+                        gameMessage = "Find game failed: $error"
+                        logText += "Find game failed: $error\\n"
+                    } finally {
+                        findingGame = false
                     }
-                } catch (e: Exception) {
-                    logText += "Find game failed: ${e.message ?: e.javaClass.simpleName}\n"
                 }
             }
-        }) { Text("Find game") }
+        ) { Text(if (findingGame) "Searching…" else "Find game") }
+        Text(gameMessage, color = if (gameMessage.startsWith("Game found")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
 
         Spacer(Modifier.height(12.dp))
         Text("2. Search", style = MaterialTheme.typography.titleMedium)
