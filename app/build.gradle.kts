@@ -11,8 +11,8 @@ android {
         applicationId = "com.sky.ps5cheatfinder"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.7"
+        versionCode = 5
+        versionName = "0.8"
     }
     buildFeatures { compose = true }
     compileOptions {
