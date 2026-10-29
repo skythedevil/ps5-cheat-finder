@@ -5,14 +5,14 @@ Android app for manual memory scanning and cheat-table management with a PS5 run
 ## Build APK
 Open **Actions → Build APK**. The workflow builds a debug APK and publishes it as the `PS5CheatFinder-debug` artifact.
 
-## Requirements
+## Laptop live dashboard\n\nWhen the Android app is open, it serves a read-only live dashboard on port `8765`. The app shows the phone's LAN URL near the top, for example `http://192.168.1.25:8765`. Open that address on a laptop connected to the same Wi-Fi network. Candidate addresses and values are shown when fewer than 10 candidates remain; the current value refreshes automatically. The dashboard is for viewing only; scanning and value edits remain in the Android app.\n\n## Requirements
 - Jailbroken PS5 with ps5debug-NG running
 - Android phone and PS5 on the same Wi-Fi
 - Android 8.0 or later
 
 ## Features
 - Connect to PS5 by IP address and find the running game process
-- Exact first scan and comparative next scans
+- Exact first scan and comparative next scans, with visible zero-match diagnostics\n- Live current-value refresh for fewer than 10 candidates\n- Local browser dashboard for laptop viewing on port 8765
 - Bounded AOB signature search around up to 300 known scan candidates, with ?? wildcard bytes
 - Integer, float and double value types
 - Cheat table, write values, freeze values, save/load JSON
