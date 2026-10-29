@@ -24,6 +24,18 @@ class Ps5Connection(private val ip: String, private val port: Int = 744) {
         }
     }
     fun findPid(processName: String): Int? = listProcesses().firstOrNull { it.first == processName }?.second
+    fun processInfo(pid: Int): ProcessInfo {
+        val body = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(pid).array()
+        sendCommand(CMD_PROC_INFO, body)
+        val status = readStatus()
+        if (status != WIRE_SUCCESS) error("Process-info command rejected (status 0x${status.toUInt().toString(16)})")
+        val bytes = readBytes(188)
+        fun field(offset: Int, size: Int) = String(bytes, offset, size, Charsets.UTF_8).substringBefore('\\u0000').trim()
+        return ProcessInfo(
+            ByteBuffer.wrap(bytes, 0, 4).order(ByteOrder.LITTLE_ENDIAN).int,
+            field(4, 40), field(44, 64), field(108, 16), field(124, 64)
+        )
+    }
     fun readMemory(pid: Int, address: Long, size: Int): ByteArray? { val body = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).putInt(pid).putLong(address).putInt(size).array(); sendCommand(CMD_PROC_READ, body); if (readStatus() != WIRE_SUCCESS) return null; return readBytes(size) }
     fun writeMemory(pid: Int, address: Long, data: ByteArray): Boolean { val body = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).putInt(pid).putLong(address).putInt(data.size).array(); sendCommand(CMD_PROC_WRITE, body); if (readStatus() != WIRE_SUCCESS) return false; sendRaw(data); return readStatus() == WIRE_SUCCESS }
     fun scanExact(pid: Int, type: ValueType, valueBytes: ByteArray): List<Long> {
@@ -42,5 +54,5 @@ class Ps5Connection(private val ip: String, private val port: Int = 744) {
     private fun readInt(): Int = ByteBuffer.wrap(readBytes(4)).order(ByteOrder.LITTLE_ENDIAN).int
     private fun readLong(): Long = ByteBuffer.wrap(readBytes(8)).order(ByteOrder.LITTLE_ENDIAN).long
     private fun readStatus(): Int = readInt()
-    companion object { val PACKET_MAGIC = 0xFFAABBCC.toInt(); val CMD_PROC_LIST = 0xBDAA0001.toInt(); val CMD_PROC_READ = 0xBDAA0002.toInt(); val CMD_PROC_WRITE = 0xBDAA0003.toInt(); val CMD_PROC_SCAN = 0xBDAA0009.toInt(); val WIRE_SUCCESS = 0x80000000.toInt(); const val END_OF_LIST = -1L; const val COMPARE_EXACT = 0 }
+    companion object { val PACKET_MAGIC = 0xFFAABBCC.toInt(); val CMD_PROC_LIST = 0xBDAA0001.toInt(); val CMD_PROC_READ = 0xBDAA0002.toInt(); val CMD_PROC_WRITE = 0xBDAA0003.toInt(); val CMD_PROC_SCAN = 0xBDAA0009.toInt(); val CMD_PROC_INFO = 0xBDAA000A.toInt(); val WIRE_SUCCESS = 0x80000000.toInt(); const val END_OF_LIST = -1L; const val COMPARE_EXACT = 0 }
 }
