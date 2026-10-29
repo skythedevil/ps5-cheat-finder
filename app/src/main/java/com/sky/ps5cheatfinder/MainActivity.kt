@@ -23,6 +23,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DashboardServer.start()
         setContent {
             val colors = lightColorScheme(
                 primary = androidx.compose.ui.graphics.Color(0xFF167D45),
@@ -63,6 +64,8 @@ fun AppScreen() {
     var searchText by remember { mutableStateOf("") }
     var newValue by remember { mutableStateOf("") }
     var count by remember { mutableIntStateOf(0) }
+    var resultVersion by remember { mutableIntStateOf(0) }
+    var scanMessage by remember { mutableStateOf("Enter a value visible in-game, then run First scan.") }
     var aobPattern by remember { mutableStateOf("48 8B ?? ??") }
     var aobRadius by remember { mutableStateOf("128") }
     var aobResults by remember { mutableStateOf<List<Long>>(emptyList()) }
@@ -93,9 +96,33 @@ fun AppScreen() {
         }
     }
 
+    LaunchedEffect(conn, pid, scanner, typeIndex, status, gameMessage, count) {
+        while (true) {
+            val c = conn
+            val p = pid
+            val s = scanner
+            if (c != null && p != null && s != null && s.candidates.size in 1..9) {
+                try {
+                    withContext(Dispatchers.IO) { s.refreshCurrentValues() }
+                    resultVersion++
+                } catch (_: Exception) { }
+            }
+            val rows = s?.candidates?.takeIf { it.size < 10 }?.map {
+                DashboardRow(it.address, type.toText(it.lastBytes), type.toText(it.currentBytes))
+            } ?: emptyList()
+            DashboardData.update(
+                if (p != null) "Game found · PID $p" else if (conn != null) status else "Not connected",
+                p, type.label, count, rows
+            )
+            delay(700)
+        }
+    }
+
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White).padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
         Text("Status: $status")
+        Text("Laptop dashboard: http://" + DashboardServer.localIp(context) + ":" + DashboardServer.PORT, color = MaterialTheme.colorScheme.primary)
+        Text("Keep phone and laptop on the same Wi-Fi. Dashboard is read-only.", style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(12.dp))
         Text("1. Connect", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(ip, { ip = it }, label = { Text("PS5 IP address") }, modifier = Modifier.fillMaxWidth())
@@ -163,12 +190,15 @@ fun AppScreen() {
                     scanner = s
                     count = n
                     logText += "First scan (${type.label}, exact value $searchText): $n results\n"
-                    if (n == 0) logText += "No exact matches. Verify the value/type, change the value in-game and try again. If this repeats, check the PS5Debug connection and game PID.\n"
+                    scanMessage = if (n == 0) "0 matches: PID $p is valid, but the exact value/type may not match. Try Float for decimal game values, then change the in-game value and scan again." else "Found $n candidates. Current values refresh automatically when fewer than 10 remain."
+                    if (n == 0) logText += "No exact matches. Try the Float type for decimal values, check the displayed value carefully, and scan again after changing it in-game. PID $p was found, but that does not guarantee the selected type/value exists in memory.\n"
                 } catch (e: Exception) {
+                    scanMessage = "First scan failed: ${e.message ?: e.javaClass.simpleName}"
                     logText += "First scan failed: ${e.message ?: e.javaClass.simpleName}\n"
                 }
             }
         }) { Text("First scan (exact value)") }
+        Text(scanMessage, color = if (scanMessage.startsWith("0 matches") || scanMessage.startsWith("First scan failed")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
         Button(onClick = {
             val s = scanner
             if (s == null) { logText += "Do a first scan first.\n"; return@Button }
@@ -181,9 +211,10 @@ fun AppScreen() {
 
         Spacer(Modifier.height(12.dp))
         Text("3. Results: $count", style = MaterialTheme.typography.titleMedium)
+        if (count in 1..9) Text("Live values update automatically. ‘scan’ is the comparison baseline; ‘now’ is the latest read.", style = MaterialTheme.typography.bodySmall)
         scanner?.candidates?.take(20)?.forEach { cand ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("0x" + cand.address.toString(16) + "  last: " + type.toText(cand.lastBytes), modifier = Modifier.weight(1f))
+                Text("0x" + cand.address.toString(16) + "\nscan: " + type.toText(cand.lastBytes) + "  now: " + type.toText(cand.currentBytes), modifier = Modifier.weight(1f))
                 Button(onClick = { table.add(CheatEntry("Found " + cand.address.toString(16), cand.address, type)) }) { Text("Add") }
             }
         }
