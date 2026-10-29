@@ -32,7 +32,7 @@ class Ps5Connection(private val ip: String, private val port: Int = 744) {
         val status = readStatus()
         if (status != WIRE_SUCCESS) error("Process-info command rejected (status 0x${status.toUInt().toString(16)})")
         val bytes = readBytes(188)
-        fun field(offset: Int, size: Int) = String(bytes, offset, size, Charsets.UTF_8).substringBefore('\\u0000').trim()
+        fun field(offset: Int, size: Int) = String(bytes, offset, size, Charsets.UTF_8).substringBefore('\u0000').trim()
         return ProcessInfo(
             ByteBuffer.wrap(bytes, 0, 4).order(ByteOrder.LITTLE_ENDIAN).int,
             field(4, 40), field(44, 64), field(108, 16), field(124, 64)
