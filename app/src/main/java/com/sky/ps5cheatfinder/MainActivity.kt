@@ -1,6 +1,8 @@
 package com.sky.ps5cheatfinder
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -18,6 +20,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -53,6 +58,9 @@ fun AppScreen() {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var ip by remember { mutableStateOf("192.168.1.") }
+    var updateInfo by remember { mutableStateOf("Checking latest release…") }
+    var updateUrl by remember { mutableStateOf("https://github.com/skythedevil/ps5-cheat-finder/releases/latest") }
+    var checkingUpdate by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Not connected") }
     var gameMessage by remember { mutableStateOf("Connect to your PS5, launch the game, then tap Find game.") }
     var gameInfo by remember { mutableStateOf("Game metadata not loaded yet.") }
@@ -86,6 +94,38 @@ fun AppScreen() {
     var aiTesting by remember { mutableStateOf(false) }
     var aiQuestion by remember { mutableStateOf("") }
     val aiType = aiTypes[aiIndex]
+
+    LaunchedEffect(Unit) {
+        checkingUpdate = true
+        try {
+            val info = withContext(Dispatchers.IO) {
+                val request = Request.Builder()
+                    .url("https://api.github.com/repos/skythedevil/ps5-cheat-finder/releases/latest")
+                    .header("Accept", "application/vnd.github+json")
+                    .build()
+                OkHttpClient().newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw IllegalStateException("GitHub returned HTTP ${response.code}")
+                    val json = JSONObject(response.body?.string().orEmpty())
+                    val tag = json.optString("tag_name", "Latest release")
+                    val title = json.optString("name", tag).ifBlank { tag }
+                    val body = json.optString("body", "").trim().take(500)
+                    val html = json.optString("html_url", "https://github.com/skythedevil/ps5-cheat-finder/releases/latest")
+                    val apk = json.optJSONArray("assets")?.let { assets ->
+                        (0 until assets.length()).map { assets.getJSONObject(it) }
+                            .firstOrNull { it.optString("name").endsWith(".apk", true) }
+                            ?.optString("browser_download_url")
+                    }
+                    Pair("$title ($tag)" + if (body.isNotBlank()) "\\n$body" else "", apk ?: html)
+                }
+            }
+            updateInfo = "Latest release: ${info.first}"
+            updateUrl = info.second
+        } catch (e: Exception) {
+            updateInfo = "Could not check updates: ${e.message ?: e.javaClass.simpleName}"
+        } finally {
+            checkingUpdate = false
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -191,6 +231,20 @@ fun AppScreen() {
 
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White).padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+        Text("Installed version: 1.6", style = MaterialTheme.typography.bodySmall)
+        Text(updateInfo, style = MaterialTheme.typography.bodyMedium)
+        Button(
+            enabled = !checkingUpdate,
+            onClick = {
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl)))
+                } catch (e: Exception) {
+                    logText += "Could not open update page: ${e.message ?: e.javaClass.simpleName}\\n"
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(if (checkingUpdate) "Checking latest build…" else "Download / update to latest release") }
+        Text("After downloading, open the APK and choose Update/Install. Android may ask you to confirm installation.", style = MaterialTheme.typography.bodySmall)
         Text("Status: $status")
         Text("Laptop dashboard: http://" + DashboardServer.localIp(context) + ":" + DashboardServer.PORT, color = MaterialTheme.colorScheme.primary)
         Text("Keep phone and laptop on the same Wi-Fi. Dashboard controls are available in your browser.", style = MaterialTheme.typography.bodySmall)
