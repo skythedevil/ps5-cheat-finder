@@ -10,9 +10,10 @@ import java.util.concurrent.TimeUnit
 
 /** The AI services the user can choose from. */
 enum class AiProviderType(val label: String, val defaultModel: String) {
-    GEMINI("Gemini (free key)", "gemini-2.5-flash"),
-    ANTHROPIC("Claude (paid key)", "claude-haiku-5-5"),
-    OPENAI_COMPATIBLE("ChatGPT / Groq / OpenRouter", "gpt-4o-mini")
+    GEMINI("Gemini", "gemini-2.5-flash"),
+    ANTHROPIC("Claude", "claude-haiku-5-5"),
+    OPENROUTER("OpenRouter", "openrouter/auto"),
+    OPENAI_COMPATIBLE("OpenAI / Groq / custom", "gpt-4o-mini")
 }
 
 /** Everything needed to call one AI service. Keys are passed in memory and never saved by this class. */
@@ -36,7 +37,7 @@ class AiClient {
             when (settings.type) {
                 AiProviderType.GEMINI -> askGemini(settings, prompt, imageBase64)
                 AiProviderType.ANTHROPIC -> askAnthropic(settings, prompt, imageBase64)
-                AiProviderType.OPENAI_COMPATIBLE -> askOpenAi(settings, prompt, imageBase64)
+                AiProviderType.OPENROUTER, AiProviderType.OPENAI_COMPATIBLE -> askOpenAi(settings, prompt, imageBase64)
             }
         } catch (e: Exception) {
             "AI error: ${e.message}"
@@ -94,7 +95,40 @@ class AiClient {
         }.joinToString("\n")
     }
 
-    /** OpenAI-style endpoint: OpenAI, Groq, OpenRouter and other compatible services. */
+    /**
+     * Checks an OpenRouter key without spending tokens by calling the key-status endpoint.
+     * The key is passed only in the request header and is never logged or persisted.
+     */
+    fun testOpenRouterKey(apiKey: String): String {
+        require(apiKey.isNotBlank()) { "Enter an OpenRouter API key first." }
+        val request = Request.Builder()
+            .url("https://openrouter.ai/api/v1/key")
+            .header("Authorization", "Bearer ${apiKey.trim()}")
+            .get()
+            .build()
+        http.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                val detail = try {
+                    JSONObject(body).optJSONObject("error")?.optString("message").orEmpty()
+                } catch (_: Exception) { "" }
+                throw IllegalStateException(
+                    "OpenRouter key test failed (HTTP ${response.code})" +
+                        if (detail.isNotBlank()) ": ${detail.take(180)}" else "."
+                )
+            }
+            val data = try { JSONObject(body).optJSONObject("data") } catch (_: Exception) { null }
+            val remaining = data?.opt("limit_remaining")?.toString()
+                ?.takeIf { it.isNotBlank() && it != "null" }
+            return if (remaining != null) {
+                "OpenRouter key is valid. Remaining key limit: $remaining."
+            } else {
+                "OpenRouter accepted the key. Authentication is working."
+            }
+        }
+    }
+
+    /** OpenAI-compatible endpoint: OpenAI, Groq, and OpenRouter. */
     private fun askOpenAi(s: AiSettings, prompt: String, image: String?): String {
         val content = JSONArray()
         content.put(JSONObject().put("type", "text").put("text", prompt))
@@ -106,8 +140,16 @@ class AiClient {
             .put("model", s.model)
             .put("max_tokens", 600)
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
-        val base = s.baseUrl.trimEnd('/').ifBlank { "https://api.openai.com/v1" }
-        val raw = post("$base/chat/completions", mapOf("Authorization" to "Bearer ${s.apiKey}"), body)
+        val base = when (s.type) {
+            AiProviderType.OPENROUTER -> "https://openrouter.ai/api/v1"
+            else -> s.baseUrl.trimEnd('/').ifBlank { "https://api.openai.com/v1" }
+        }
+        val headers = mutableMapOf("Authorization" to "Bearer ${s.apiKey}")
+        if (s.type == AiProviderType.OPENROUTER) {
+            headers["HTTP-Referer"] = "https://github.com/skythedevil/ps5-cheat-finder"
+            headers["X-OpenRouter-Title"] = "PS5 Cheat Finder"
+        }
+        val raw = post("$base/chat/completions", headers, body)
         return JSONObject(raw).getJSONArray("choices").getJSONObject(0)
             .getJSONObject("message").optString("content")
     }
