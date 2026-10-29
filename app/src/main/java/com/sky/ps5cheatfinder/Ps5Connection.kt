@@ -41,14 +41,57 @@ class Ps5Connection(private val ip: String, private val port: Int = 744) {
     fun readMemory(pid: Int, address: Long, size: Int): ByteArray? { val body = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).putInt(pid).putLong(address).putInt(size).array(); sendCommand(CMD_PROC_READ, body); if (readStatus() != WIRE_SUCCESS) return null; return readBytes(size) }
     fun writeMemory(pid: Int, address: Long, data: ByteArray): Boolean { val body = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).putInt(pid).putLong(address).putInt(data.size).array(); sendCommand(CMD_PROC_WRITE, body); if (readStatus() != WIRE_SUCCESS) return false; sendRaw(data); return readStatus() == WIRE_SUCCESS }
     fun scanExact(pid: Int, type: ValueType, valueBytes: ByteArray): List<Long> {
-        val body = ByteBuffer.allocate(10).order(ByteOrder.LITTLE_ENDIAN).putInt(pid).put(type.wireCode.toByte()).put(COMPARE_EXACT.toByte()).putInt(valueBytes.size).array()
+        // PS5Debug-NG uses an ack/data/ack/address-stream exchange. Older PS5Debug
+        // builds use the original PS4Debug framing: value bytes are part of the
+        // command body and the reply starts with a uint32 result count.
+        val body = ByteBuffer.allocate(10).order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(pid).put(type.wireCode.toByte()).put(COMPARE_EXACT.toByte())
+            .putInt(valueBytes.size).array()
         sendCommand(CMD_PROC_SCAN, body)
         val firstStatus = readStatus()
-        if (firstStatus != WIRE_SUCCESS) error("Scan command rejected (status 0x${firstStatus.toUInt().toString(16)}). Check PS5Debug version and target PID.")
+        if (firstStatus != WIRE_SUCCESS) {
+            // Small positive values are not PS5Debug-NG status words. In the
+            // legacy protocol they are the result count; reconnect before retrying
+            // so the abandoned attempt cannot desynchronise subsequent commands.
+            if (firstStatus in 0..MAX_LEGACY_RESULTS) {
+                disconnect()
+                if (!connect()) error("Legacy PS5Debug scan response detected, but reconnect failed.")
+                return scanExactLegacy(pid, type, valueBytes)
+            }
+            error("Scan command rejected (raw response 0x${firstStatus.toUInt().toString(16)}). This looks like a legacy PS5Debug server or an unsupported scan protocol.")
+        }
         sendRaw(valueBytes)
         val scanStatus = readStatus()
         if (scanStatus != WIRE_SUCCESS) error("PS5Debug could not complete the scan (status 0x${scanStatus.toUInt().toString(16)}).")
-        val results = ArrayList<Long>(); while (true) { val address = readLong(); if (address == END_OF_LIST) break; results.add(address) }; return results
+        val results = ArrayList<Long>()
+        while (true) {
+            val address = readLong()
+            if (address == END_OF_LIST) break
+            results.add(address)
+        }
+        return results
+    }
+
+    private fun scanExactLegacy(pid: Int, type: ValueType, valueBytes: ByteArray): List<Long> {
+        // Legacy command framing places the compared value directly after the
+        // 10-byte scan header inside packet.data (header datalen includes both).
+        val scanHeader = ByteBuffer.allocate(10).order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(pid).put(type.wireCode.toByte()).put(COMPARE_EXACT.toByte())
+            .putInt(valueBytes.size).array()
+        val body = ByteArray(scanHeader.size + valueBytes.size)
+        System.arraycopy(scanHeader, 0, body, 0, scanHeader.size)
+        System.arraycopy(valueBytes, 0, body, scanHeader.size, valueBytes.size)
+        sendCommand(CMD_PROC_SCAN, body)
+
+        // Original PS5Debug/PS4Debug replies with count followed by count addresses.
+        val count = readInt()
+        if (count < 0 || count > MAX_LEGACY_RESULTS) {
+            disconnect()
+            error("Legacy scan returned an invalid result count/status 0x${count.toUInt().toString(16)}. Update PS5Debug to a compatible build.")
+        }
+        val results = ArrayList<Long>(count)
+        repeat(count) { results.add(readLong()) }
+        return results
     }
     private fun sendCommand(cmd: Int, body: ByteArray = ByteArray(0)) { val header = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN).putInt(PACKET_MAGIC).putInt(cmd).putInt(body.size).array(); sendRaw(header); if (body.isNotEmpty()) sendRaw(body) }
     private fun sendRaw(data: ByteArray) { val out = output ?: error("Not connected"); out.write(data); out.flush() }
