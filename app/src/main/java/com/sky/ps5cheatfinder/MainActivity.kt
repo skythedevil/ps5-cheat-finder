@@ -411,7 +411,7 @@ fun AppScreen() {
                             try { AiClient().testOpenRouterKey(aiKey.trim()) }
                             catch (e: Exception) { "OpenRouter test failed: ${e.message ?: e.javaClass.simpleName}" }
                         }
-                        logText += "$result\\n"
+                        logText += "$result\n"
                         aiTesting = false
                     }
                 },
