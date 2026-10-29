@@ -180,7 +180,7 @@ fun AppScreen() {
             } ?: emptyList()
             DashboardData.update(
                 if (p != null) "Game found · PID $p" else if (conn != null) status else "Not connected",
-                p, type.label, count, rows
+                p, type.label, count, rows, if (scanMessage.startsWith("First scan failed") || scanMessage.startsWith("Next scan failed")) scanMessage else if (scanMessage != "Enter a value visible in-game, then run First scan.") scanMessage else gameMessage
             )
             delay(700)
         }
