@@ -108,9 +108,21 @@ fun AppScreen() {
             val c = conn
             if (c == null) { logText += "Connect first.\n"; return@Button }
             scope.launch {
-                val found = withContext(Dispatchers.IO) { c.findPid(GAME_PROCESS) }
-                if (found != null) { pid = found; logText += "Found $GAME_PROCESS, pid $found\n" }
-                else logText += "$GAME_PROCESS not found. Start the game first.\n"
+                try {
+                    val processes = withContext(Dispatchers.IO) { c.listProcesses() }
+                    val found = processes.firstOrNull { it.first.equals(GAME_PROCESS, ignoreCase = true) }?.second
+                    if (found != null) {
+                        pid = found
+                        scanner = null
+                        count = 0
+                        logText += "Found $GAME_PROCESS, pid $found\n"
+                    } else {
+                        logText += "$GAME_PROCESS not found in ${processes.size} listed processes. Start the game and check that ps5debug-NG is attached. Processes reported by PS5Debug:\n"
+                        logText += processes.take(40).joinToString("\n") { "${it.first.ifBlank { "(unnamed)" }} (PID ${it.second})" } + "\n"
+                    }
+                } catch (e: Exception) {
+                    logText += "Find game failed: ${e.message ?: e.javaClass.simpleName}\n"
+                }
             }
         }) { Text("Find game") }
 
@@ -124,9 +136,19 @@ fun AppScreen() {
             if (c == null || p == null) { logText += "Connect and find the game first.\n"; return@Button }
             scope.launch {
                 val s = MemoryScanner(c, p, type)
-                val n = withContext(Dispatchers.IO) { s.firstScan(searchText) }
-                if (n < 0) { logText += "Type a valid number first.\n"; return@launch }
-                scanner = s; count = n; logText += "First scan (exact): $n results\n"
+                try {
+                    val n = withContext(Dispatchers.IO) { s.firstScan(searchText) }
+                    if (n < 0) {
+                        logText += "Enter a valid number for the selected value type (${type.label}).\n"
+                        return@launch
+                    }
+                    scanner = s
+                    count = n
+                    logText += "First scan (${type.label}, exact value $searchText): $n results\n"
+                    if (n == 0) logText += "No exact matches. Verify the value/type, change the value in-game and try again. If this repeats, check the PS5Debug connection and game PID.\n"
+                } catch (e: Exception) {
+                    logText += "First scan failed: ${e.message ?: e.javaClass.simpleName}\n"
+                }
             }
         }) { Text("First scan (exact value)") }
         Button(onClick = {
