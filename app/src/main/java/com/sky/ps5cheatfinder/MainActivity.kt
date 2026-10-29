@@ -2,9 +2,11 @@ package com.sky.ps5cheatfinder
 
 import android.os.Bundle
 import android.content.Intent
+import android.content.Context
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -61,6 +63,9 @@ fun AppScreen() {
     var updateInfo by remember { mutableStateOf("Checking latest release…") }
     var updateUrl by remember { mutableStateOf("https://github.com/skythedevil/ps5-cheat-finder/releases/latest") }
     var checkingUpdate by remember { mutableStateOf(false) }
+    var downloadingUpdate by remember { mutableStateOf(false) }
+    var isScanning by remember { mutableStateOf(false) }
+    var scanElapsedSeconds by remember { mutableIntStateOf(0) }
     var status by remember { mutableStateOf("Not connected") }
     var gameMessage by remember { mutableStateOf("Connect to your PS5, launch the game, then tap Find game.") }
     var gameInfo by remember { mutableStateOf("Game metadata not loaded yet.") }
@@ -94,6 +99,13 @@ fun AppScreen() {
     var aiTesting by remember { mutableStateOf(false) }
     var aiQuestion by remember { mutableStateOf("") }
     val aiType = aiTypes[aiIndex]
+
+    LaunchedEffect(isScanning) {
+        if (isScanning) {
+            scanElapsedSeconds = 0
+            while (isScanning) { delay(1000); scanElapsedSeconds++ }
+        }
+    }
 
     LaunchedEffect(Unit) {
         checkingUpdate = true
@@ -233,20 +245,35 @@ fun AppScreen() {
 
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White).padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-        Text("Installed version: 1.6", style = MaterialTheme.typography.bodySmall)
+        Text("Installed version: ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
         Text(updateInfo, style = MaterialTheme.typography.bodyMedium)
         Button(
-            enabled = !checkingUpdate,
+            enabled = !checkingUpdate && !downloadingUpdate,
             onClick = {
-                try {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl)))
-                } catch (e: Exception) {
-                    logText += "Could not open update page: ${e.message ?: e.javaClass.simpleName}\\n"
+                if (updateUrl.substringBefore("?").endsWith(".apk", ignoreCase = true)) {
+                    scope.launch {
+                        downloadingUpdate = true
+                        updateInfo = "Downloading update inside the app…"
+                        try {
+                            val apkFile = withContext(Dispatchers.IO) { downloadUpdateApk(context, updateUrl) }
+                            val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
+                            val installIntent = Intent(Intent.ACTION_VIEW)
+                                .setDataAndType(apkUri, "application/vnd.android.package-archive")
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(installIntent)
+                            updateInfo = "Update downloaded. Confirm Install/Update in Android’s installer."
+                        } catch (e: Exception) {
+                            updateInfo = "Update failed: ${e.message ?: e.javaClass.simpleName}"
+                        } finally { downloadingUpdate = false }
+                    }
+                } else {
+                    try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl))) }
+                    catch (e: Exception) { updateInfo = "Could not open releases: ${e.message ?: e.javaClass.simpleName}" }
                 }
             },
             modifier = Modifier.fillMaxWidth()
-        ) { Text(if (checkingUpdate) "Checking latest build…" else "Download / update to latest release") }
-        Text("After downloading, open the APK and choose Update/Install. Android may ask you to confirm installation.", style = MaterialTheme.typography.bodySmall)
+        ) { Text(when { checkingUpdate -> "Checking latest build…"; downloadingUpdate -> "Downloading update…"; updateUrl.substringBefore("?").endsWith(".apk", true) -> "Install latest update"; else -> "Open latest release" }) }
+        Text("The app downloads the update itself and opens Android’s installer. Android still requires confirmation.", style = MaterialTheme.typography.bodySmall)
         Text("Status: $status")
         Text("Laptop dashboard: http://" + DashboardServer.localIp(context) + ":" + DashboardServer.PORT, color = MaterialTheme.colorScheme.primary)
         Text("Keep phone and laptop on the same Wi-Fi. Dashboard controls are available in your browser.", style = MaterialTheme.typography.bodySmall)
@@ -496,5 +523,22 @@ fun AppScreen() {
 
         Spacer(Modifier.height(12.dp))
         Text("Log:\n$logText")
+    }
+}
+
+ 
+private fun downloadUpdateApk(context: Context, url: String): File {
+    val request = Request.Builder().url(url).header("Accept", "application/octet-stream").build()
+    OkHttpClient().newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw IllegalStateException("Download failed (HTTP ${response.code})")
+        val body = response.body ?: throw IllegalStateException("GitHub returned an empty APK")
+        val file = File(context.cacheDir, "updates/PS5CheatFinder-update.apk")
+        file.parentFile?.mkdirs()
+        body.byteStream().use { input -> file.outputStream().use { output -> input.copyTo(output) } }
+        if (file.length() < 100_000) {
+            file.delete()
+            throw IllegalStateException("Downloaded file is too small to be a valid APK")
+        }
+        return file
     }
 }
