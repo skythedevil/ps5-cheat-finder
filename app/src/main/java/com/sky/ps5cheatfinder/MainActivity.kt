@@ -3,6 +3,7 @@ package com.sky.ps5cheatfinder
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -30,8 +31,13 @@ class MainActivity : ComponentActivity() {
                 onSecondary = androidx.compose.ui.graphics.Color.White,
                 error = androidx.compose.ui.graphics.Color(0xFFB71C1C),
                 onError = androidx.compose.ui.graphics.Color.White,
-                background = androidx.compose.ui.graphics.Color(0xFFF5F8F5),
-                surface = androidx.compose.ui.graphics.Color(0xFFFFFFFF)
+                background = androidx.compose.ui.graphics.Color.White,
+                onBackground = androidx.compose.ui.graphics.Color(0xFF111111),
+                surface = androidx.compose.ui.graphics.Color.White,
+                onSurface = androidx.compose.ui.graphics.Color(0xFF111111),
+                surfaceVariant = androidx.compose.ui.graphics.Color(0xFFF1F3F1),
+                onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF252525),
+                outline = androidx.compose.ui.graphics.Color(0xFF555555)
             )
             MaterialTheme(colorScheme = colors) { AppScreen() }
         }
@@ -85,7 +91,7 @@ fun AppScreen() {
         }
     }
 
-    Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White).padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
         Text("Status: $status")
         Spacer(Modifier.height(12.dp))
