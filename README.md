@@ -34,9 +34,9 @@ Google's free-tier availability and usage limits can change. Model names also ch
 - **Claude:** create a key in the [Anthropic Console](https://console.anthropic.com/). Billing may need to be enabled. Select Claude, enter the key, and check the current model name if the default is unavailable.
 - **OpenAI:** use a key from the [OpenAI platform](https://platform.openai.com/api-keys), base URL `https://api.openai.com/v1`, and a model available to your account.
 - **Groq:** use a key from [Groq Console](https://console.groq.com/keys), base URL `https://api.groq.com/openai/v1`, and a model listed by Groq.
-- **OpenRouter:** use a key from [OpenRouter](https://openrouter.ai/keys), base URL `https://openrouter.ai/api/v1`, and a model listed by OpenRouter.
+- **OpenRouter (recommended in v1.5):** create a key at [OpenRouter](https://openrouter.ai/keys). The app defaults to `https://openrouter.ai/api/v1` and model `openrouter/auto`, which lets OpenRouter route each prompt to an available model. Paste the key and tap **Test OpenRouter API key** before trying **Ask AI**. The test checks key authentication through OpenRouter's key-status endpoint without generating a completion.
 
-Tap the Provider button to cycle through Gemini, Claude, and OpenAI-compatible. For the OpenAI-compatible option, set the base URL and model for the service you chose. Free models and limits vary by provider and may change.
+Tap the Provider button to cycle through Gemini, Claude, OpenRouter, and OpenAI-compatible. For the OpenAI-compatible option, set the base URL and model for the service you chose. Model availability, pricing, and account limits can change.
 
 **Key privacy:** keys are masked while typing and kept only in app memory while the app is open. They are not saved to the cheat-table file or any app file and are not written to app logs. Closing the app clears the key. The key is sent to the provider you selected to authorize the AI request.
 
