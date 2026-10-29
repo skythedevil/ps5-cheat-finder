@@ -245,7 +245,7 @@ fun AppScreen() {
 
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White).padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-        Text("Installed version: ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
+        Text("Installed version: 1.8", style = MaterialTheme.typography.bodySmall)
         Text(updateInfo, style = MaterialTheme.typography.bodyMedium)
         Button(
             enabled = !checkingUpdate && !downloadingUpdate,
@@ -331,15 +331,18 @@ fun AppScreen() {
         Button(onClick = { typeIndex = (typeIndex + 1) % types.size }) { Text("Value type: ${type.label} (tap to change)") }
         Button(onClick = { modeIndex = (modeIndex + 1) % modes.size }) { Text("Next-scan compare: ${mode.label} (tap to change)") }
         OutlinedTextField(searchText, { searchText = it }, label = { Text("Value you see in game") }, modifier = Modifier.fillMaxWidth())
-        Button(onClick = {
+        Button(enabled = !isScanning, onClick = {
             val c = conn; val p = pid
             if (c == null || p == null) { logText += "Connect and find the game first.\n"; return@Button }
+            isScanning = true
+            scanMessage = "First scan running… keep this app open."
             scope.launch {
                 val s = MemoryScanner(c, p, type)
                 try {
                     val n = withContext(Dispatchers.IO) { s.firstScan(searchText) }
                     if (n < 0) {
                         logText += "Enter a valid number for the selected value type (${type.label}).\n"
+                        scanMessage = "Enter a valid number for ${type.label}."
                         return@launch
                     }
                     scanner = s
@@ -350,9 +353,15 @@ fun AppScreen() {
                 } catch (e: Exception) {
                     scanMessage = "First scan failed: ${e.message ?: e.javaClass.simpleName}"
                     logText += "First scan failed: ${e.message ?: e.javaClass.simpleName}\n"
+                } finally {
+                    isScanning = false
                 }
             }
-        }) { Text("First scan (exact value)") }
+        }) { Text(if (isScanning) "Scanning… ${scanElapsedSeconds}s" else "First scan (exact value)") }
+        if (isScanning) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text("Scan in progress: ${scanElapsedSeconds}s elapsed. Keep the app open.", style = MaterialTheme.typography.bodySmall)
+        }
         Text(scanMessage, color = if (scanMessage.startsWith("0 matches") || scanMessage.startsWith("First scan failed")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
         Button(onClick = {
             val s = scanner
