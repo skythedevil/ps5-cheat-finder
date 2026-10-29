@@ -55,6 +55,7 @@ fun AppScreen() {
     var ip by remember { mutableStateOf("192.168.1.") }
     var status by remember { mutableStateOf("Not connected") }
     var gameMessage by remember { mutableStateOf("Connect to your PS5, launch the game, then tap Find game.") }
+    var gameInfo by remember { mutableStateOf("Game metadata not loaded yet.") }
     var findingGame by remember { mutableStateOf(false) }
     var conn by remember { mutableStateOf<Ps5Connection?>(null) }
     var pid by remember { mutableStateOf<Int?>(null) }
@@ -190,7 +191,7 @@ fun AppScreen() {
         Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
         Text("Status: $status")
         Text("Laptop dashboard: http://" + DashboardServer.localIp(context) + ":" + DashboardServer.PORT, color = MaterialTheme.colorScheme.primary)
-        Text("Keep phone and laptop on the same Wi-Fi. Dashboard is read-only.", style = MaterialTheme.typography.bodySmall)
+        Text("Keep phone and laptop on the same Wi-Fi. Dashboard controls are available in your browser.", style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(12.dp))
         Text("1. Connect", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(ip, { ip = it }, label = { Text("PS5 IP address") }, modifier = Modifier.fillMaxWidth())
