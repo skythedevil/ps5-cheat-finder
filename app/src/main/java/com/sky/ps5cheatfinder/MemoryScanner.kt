@@ -1,6 +1,6 @@
 package com.sky.ps5cheatfinder
 
-data class Candidate(val address: Long, val lastBytes: ByteArray)
+data class Candidate(val address: Long, val lastBytes: ByteArray, val currentBytes: ByteArray = lastBytes)
 class MemoryScanner(private val conn: Ps5Connection, private val pid: Int, val type: ValueType) {
     var candidates: List<Candidate> = emptyList(); private set
     fun firstScan(text: String): Int {
@@ -8,6 +8,13 @@ class MemoryScanner(private val conn: Ps5Connection, private val pid: Int, val t
         candidates = conn.scanExact(pid, type, bytes).map { Candidate(it, bytes) }
         return candidates.size
     }
+    fun refreshCurrentValues() {
+        candidates = candidates.map { candidate ->
+            val now = conn.readMemory(pid, candidate.address, type.size)
+            if (now == null) candidate else candidate.copy(currentBytes = now)
+        }
+    }
+
     fun nextScan(mode: CompareMode, text: String): Int {
         val needsNumber = mode == CompareMode.EXACT || mode == CompareMode.BIGGER || mode == CompareMode.SMALLER
         if (needsNumber && type.encode(text) == null) return -1
