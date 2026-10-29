@@ -13,7 +13,7 @@ class Ps5Connection(private val ip: String, private val port: Int = 744) {
     private var socket: Socket? = null
     private var input: BufferedInputStream? = null
     private var output: BufferedOutputStream? = null
-    fun connect(): Boolean = try { val s = Socket(ip, port); s.soTimeout = 10_000; s.tcpNoDelay = true; socket = s; input = BufferedInputStream(s.getInputStream()); output = BufferedOutputStream(s.getOutputStream()); true } catch (_: Exception) { false }
+    fun connect(): Boolean = try { val s = Socket(); s.connect(java.net.InetSocketAddress(ip, port), 8_000); s.soTimeout = 180_000; s.tcpNoDelay = true; socket = s; input = BufferedInputStream(s.getInputStream()); output = BufferedOutputStream(s.getOutputStream()); true } catch (_: Exception) { disconnect(); false }
     fun disconnect() { try { socket?.close() } catch (_: Exception) {}; socket = null; input = null; output = null }
     fun listProcesses(): List<Pair<String, Int>> {
         sendCommand(CMD_PROC_LIST)
