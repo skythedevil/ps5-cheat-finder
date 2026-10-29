@@ -53,15 +53,16 @@ object DashboardServer {
             val isApi = path == "/api/state"
             val isAction = path == "/api/action" && method == "POST"
             if (isAction) {
-                val bodyBytes = ByteArray(contentLength.coerceIn(0, 4096))
+                val bodyChars = CharArray(contentLength.coerceIn(0, 4096))
                 var got = 0
-                while (got < bodyBytes.size) {
-                    val n = client.getInputStream().read(bodyBytes, got, bodyBytes.size - got)
+                while (got < bodyChars.size) {
+                    val n = reader.read(bodyChars, got, bodyChars.size - got)
                     if (n < 0) break
                     got += n
                 }
+                val bodyText = String(bodyChars, 0, got)
                 try {
-                    val json = org.json.JSONObject(String(bodyBytes, 0, got, StandardCharsets.UTF_8))
+                    val json = org.json.JSONObject(bodyText)
                     DashboardData.enqueue(json.optString("action"), json.optString("value"))
                 } catch (_: Exception) { }
             }
