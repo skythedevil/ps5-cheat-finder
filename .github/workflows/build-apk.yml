@@ -23,3 +23,15 @@ jobs:
         with:
           name: PS5CheatFinder-debug
           path: app/build/outputs/apk/debug/*.apk
+      - name: Publish latest APK release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: PS5 Cheat Finder - Latest build
+          body: |
+            This release is automatically refreshed from the main branch after each successful build.
+            Download PS5CheatFinder-debug.apk below. The app checks this release for latest build details.
+          files: app/build/outputs/apk/debug/app-debug.apk
+          overwrite_files: true
+          make_latest: true
