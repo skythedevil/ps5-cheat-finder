@@ -108,7 +108,7 @@ fun AppScreen() {
     val aiType = aiTypes[aiIndex]
 
     fun captureError(stage: String, error: Throwable) {
-        val report = ErrorReporter.build(stage, error, ip, pid, type.label, mode.label, "1.10", logText)
+        val report = ErrorReporter.build(stage, error, ip, pid, type.label, mode.label, "1.12", logText)
         lastErrorReport = report
         val code = report.lineSequence().firstOrNull { it.startsWith("Error code:") } ?: "Error code: PS5CF-UNKNOWN"
         logText += "$code\n$stage failed: ${error.message ?: error.javaClass.simpleName}\n"
@@ -259,7 +259,7 @@ fun AppScreen() {
 
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White).padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-        Text("Installed version: 1.11", style = MaterialTheme.typography.bodySmall)
+        Text("Installed version: 1.12", style = MaterialTheme.typography.bodySmall)
         Text(updateInfo, style = MaterialTheme.typography.bodyMedium)
         Button(
             enabled = !checkingUpdate && !downloadingUpdate,
@@ -477,30 +477,70 @@ fun AppScreen() {
         Text("5. Cheat table", style = MaterialTheme.typography.titleMedium)
         if (table.isEmpty()) Text("Empty. Add addresses from the results above.")
         table.forEachIndexed { index, entry ->
-            var editValue by remember(entry.address) { mutableStateOf(entry.value ?: entry.lockedValue ?: "") }
-            Column(Modifier.padding(vertical = 6.dp)) {
-                Text("${entry.label}  0x${entry.address.toString(16)}  (${entry.type.label})")
-                OutlinedTextField(value = editValue, onValueChange = { editValue = it }, label = { Text("Cheat value") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            var editLabel by remember(entry.address, entry.label) { mutableStateOf(entry.label) }
+            var editType by remember(entry.address, entry.type) { mutableStateOf(entry.type) }
+            var editValue by remember(entry.address, entry.type) { mutableStateOf(entry.value ?: entry.lockedValue ?: "") }
+            var typeMenu by remember(entry.address) { mutableStateOf(false) }
+            Column(Modifier.padding(vertical = 8.dp)) {
+                Text("0x${entry.address.toString(16)}", style = MaterialTheme.typography.labelMedium)
+                OutlinedTextField(value = editLabel, onValueChange = { editLabel = it }, label = { Text("Entry name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Box {
+                    OutlinedButton(onClick = { typeMenu = true }) { Text("Data type: ${editType.label}") }
+                    DropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
+                        types.forEach { option ->
+                            DropdownMenuItem(text = { Text(option.label) }, onClick = {
+                                editType = option
+                                editValue = entry.value ?: entry.lockedValue ?: ""
+                                typeMenu = false
+                            })
+                        }
+                    }
+                }
+                OutlinedTextField(value = editValue, onValueChange = { editValue = it }, label = { Text("Value") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text(if (entry.lockedValue == null) "Not frozen" else "Frozen at ${entry.lockedValue}")
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = {
-                        val c = conn; val p = pid; val bytes = entry.type.encode(editValue.trim())
+                        if (table.getOrNull(index)?.address == entry.address)
+                            table[index] = entry.copy(label = editLabel.trim().ifBlank { entry.label }, type = editType)
+                    }) { Text("Save entry") }
+                    OutlinedButton(onClick = {
+                        val c = conn; val p = pid
+                        if (c == null || p == null) logText += "Connect to the game before refreshing.\\n"
+                        else scope.launch {
+                            try {
+                                val bytes = withContext(Dispatchers.IO) { c.readMemory(p, entry.address, editType.size) }
+                                if (bytes == null) logText += "Could not read 0x${entry.address.toString(16)}\\n"
+                                else {
+                                    editValue = editType.toText(bytes)
+                                    if (table.getOrNull(index)?.address == entry.address)
+                                        table[index] = entry.copy(label = editLabel.trim().ifBlank { entry.label }, type = editType, value = editValue, lockedValue = null)
+                                    logText += "Refreshed 0x${entry.address.toString(16)}\\n"
+                                }
+                            } catch (e: Exception) { captureError("Refresh entry", e) }
+                        }
+                    }) { Text("Refresh") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = {
+                        val c = conn; val p = pid; val bytes = editType.encode(editValue.trim())
                         if (c == null || p == null) logText += "Connect to the game before writing.\\n"
-                        else if (bytes == null) logText += "Invalid value for ${entry.type.label}.\\n"
+                        else if (bytes == null) logText += "Invalid value for ${editType.label}.\\n"
                         else scope.launch {
                             try {
                                 val ok = withContext(Dispatchers.IO) { c.writeMemory(p, entry.address, bytes) }
-                                if (ok) { table[index] = entry.copy(value = editValue.trim(), lockedValue = null); logText += "Wrote ${editValue.trim()} to 0x${entry.address.toString(16)}\\n" }
-                                else logText += "PS5Debug rejected write at 0x${entry.address.toString(16)}\\n"
+                                if (ok && table.getOrNull(index)?.address == entry.address) {
+                                    table[index] = entry.copy(label = editLabel.trim().ifBlank { entry.label }, type = editType, value = editValue.trim(), lockedValue = null)
+                                    logText += "Wrote ${editValue.trim()} to 0x${entry.address.toString(16)}\\n"
+                                } else logText += "PS5Debug rejected write at 0x${entry.address.toString(16)}\\n"
                             } catch (e: Exception) { captureError("Write value", e) }
                         }
                     }) { Text("Write") }
                     Button(onClick = {
-                        if (entry.lockedValue != null) table[index] = entry.copy(value = editValue.trim(), lockedValue = null)
-                        else if (entry.type.encode(editValue.trim()) == null) logText += "Enter a valid value before freezing.\\n"
-                        else table[index] = entry.copy(value = editValue.trim(), lockedValue = editValue.trim())
+                        if (entry.lockedValue != null) table[index] = entry.copy(label = editLabel.trim().ifBlank { entry.label }, type = editType, value = editValue.trim(), lockedValue = null)
+                        else if (editType.encode(editValue.trim()) == null) logText += "Enter a valid value before freezing.\\n"
+                        else table[index] = entry.copy(label = editLabel.trim().ifBlank { entry.label }, type = editType, value = editValue.trim(), lockedValue = editValue.trim())
                     }) { Text(if (entry.lockedValue == null) "Freeze" else "Unfreeze") }
-                    Button(onClick = { table.removeAt(index) }) { Text("Delete") }
+                    OutlinedButton(onClick = { table.removeAt(index) }) { Text("Delete") }
                 }
             }
             Divider()
