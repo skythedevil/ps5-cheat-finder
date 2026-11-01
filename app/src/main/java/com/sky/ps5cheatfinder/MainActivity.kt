@@ -377,8 +377,7 @@ fun AppScreen() {
             Text("Scan in progress: ${scanElapsedSeconds}s elapsed. Keep the app open.", style = MaterialTheme.typography.bodySmall)
         }
         Text(scanMessage, color = if (scanMessage.startsWith("0 matches") || scanMessage.startsWith("First scan failed")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-        if (lastErrorReport.isNotBlank()) {
-            Button(enabled = !isScanning, onClick = {
+        Button(enabled = !isScanning, onClick = {
             val s = scanner
             if (s == null) { logText += "Do a first scan first.\\n"; return@Button }
             val entered = searchText.trim()
@@ -406,9 +405,15 @@ fun AppScreen() {
         }) { Text(if (isScanning && nextTotal > 0) "Next scan $nextProgress/$nextTotal" else "Next scan") }
         if (isScanning && nextTotal > 0) {
             LinearProgressIndicator(progress = { nextProgress.toFloat() / nextTotal.toFloat() }, modifier = Modifier.fillMaxWidth())
-            Text("Checked $nextProgress of $nextTotal addresses against the exact value in the field.", style = MaterialTheme.typography.bodySmall)
+            Text("Checked $nextProgress of $nextTotal addresses against the value in the field.", style = MaterialTheme.typography.bodySmall)
         }
-
+        if (lastErrorReport.isNotBlank()) {
+            Button(onClick = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("PS5 Cheat Finder error report", lastErrorReport))
+                logText += "Error report copied to clipboard.\\n"
+            }) { Text("Copy error report") }
+        }
 
         Spacer(Modifier.height(12.dp))
         Text("3. Results: $count" + if (count in 1..9) " · live refresh #$resultVersion" else "", style = MaterialTheme.typography.titleMedium)
