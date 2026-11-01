@@ -68,6 +68,8 @@ fun AppScreen() {
     var downloadingUpdate by remember { mutableStateOf(false) }
     var isScanning by remember { mutableStateOf(false) }
     var scanElapsedSeconds by remember { mutableIntStateOf(0) }
+    var nextProgress by remember { mutableIntStateOf(0) }
+    var nextTotal by remember { mutableIntStateOf(0) }
     var status by remember { mutableStateOf("Not connected") }
     var gameMessage by remember { mutableStateOf("Connect to your PS5, launch the game, then tap Find game.") }
     var gameInfo by remember { mutableStateOf("Game metadata not loaded yet.") }
@@ -88,6 +90,8 @@ fun AppScreen() {
     var logText by remember { mutableStateOf("") }
     var lastErrorReport by remember { mutableStateOf("") }
     val table = remember { mutableStateListOf<CheatEntry>() }
+    val gameFileKey = remember(gameInfo) { Regex("Title ID: ([^ ·]+)").find(gameInfo)?.groupValues?.get(1)?.replace(Regex("[^A-Za-z0-9_-]"), "")?.takeIf { it.isNotBlank() } ?: "eboot-bin" }
+    val gameCheatFile = remember(gameFileKey) { File(File(context.filesDir, "cheats").apply { mkdirs() }, "$gameFileKey.json") }
     val types = ValueType.entries
     val modes = CompareMode.entries
     val type = types[typeIndex]
@@ -255,7 +259,7 @@ fun AppScreen() {
 
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White).padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-        Text("Installed version: 1.10", style = MaterialTheme.typography.bodySmall)
+        Text("Installed version: 1.11", style = MaterialTheme.typography.bodySmall)
         Text(updateInfo, style = MaterialTheme.typography.bodyMedium)
         Button(
             enabled = !checkingUpdate && !downloadingUpdate,
@@ -374,27 +378,37 @@ fun AppScreen() {
         }
         Text(scanMessage, color = if (scanMessage.startsWith("0 matches") || scanMessage.startsWith("First scan failed")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
         if (lastErrorReport.isNotBlank()) {
-            Button(onClick = {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("PS5 Cheat Finder error report", lastErrorReport))
-                logText += "Copied diagnostic error report to clipboard.\n"
-            }, modifier = Modifier.fillMaxWidth()) { Text("Copy error report with logs") }
-            Text("Copy this report and paste it here so the scan failure can be diagnosed.", style = MaterialTheme.typography.bodySmall)
-        }
-        Button(onClick = {
+            Button(enabled = !isScanning, onClick = {
             val s = scanner
-            if (s == null) { logText += "Do a first scan first.\n"; return@Button }
+            if (s == null) { logText += "Do a first scan first.\\n"; return@Button }
+            val entered = searchText.trim()
+            if (entered.isEmpty()) { scanMessage = "Enter a comparison value."; return@Button }
+            nextProgress = 0
+            nextTotal = s.candidates.size
+            isScanning = true
+            scanMessage = "Checking existing candidates against $entered using ${mode.label}…"
             scope.launch {
                 try {
-                    val n = withContext(Dispatchers.IO) { s.nextScan(mode, searchText) }
-                    if (n < 0) { logText += "This compare needs a valid number in the box.\n"; return@launch }
-                    count = n; logText += "Next scan (${mode.label}): $n results\n"
+                    val n = withContext(Dispatchers.IO) {
+                        s.nextScan(mode, entered) { done, total -> nextProgress = done; nextTotal = total }
+                    }
+                    if (n < 0) scanMessage = "Invalid comparison value for ${s.type.label}."
+                    else {
+                        count = n
+                        scanMessage = "Next scan complete. Checked $nextTotal addresses against $entered; $n remain."
+                        logText += "Next scan ${mode.label}: value=$entered, checked=$nextTotal, remaining=$n\\n"
+                    }
                 } catch (e: Exception) {
                     captureError("Next scan", e)
-                    scanMessage = "Next scan failed: ${e.message ?: e.javaClass.simpleName}. Tap Copy error report below."
-                }
+                    scanMessage = "Next scan failed: ${e.message ?: e.javaClass.simpleName}. Copy the error report."
+                } finally { isScanning = false }
             }
-        }) { Text("Next scan") }
+        }) { Text(if (isScanning && nextTotal > 0) "Next scan $nextProgress/$nextTotal" else "Next scan") }
+        if (isScanning && nextTotal > 0) {
+            LinearProgressIndicator(progress = { nextProgress.toFloat() / nextTotal.toFloat() }, modifier = Modifier.fillMaxWidth())
+            Text("Checked $nextProgress of $nextTotal addresses against the exact value in the field.", style = MaterialTheme.typography.bodySmall)
+        }
+
 
         Spacer(Modifier.height(12.dp))
         Text("3. Results: $count" + if (count in 1..9) " · live refresh #$resultVersion" else "", style = MaterialTheme.typography.titleMedium)
@@ -458,30 +472,45 @@ fun AppScreen() {
         Text("5. Cheat table", style = MaterialTheme.typography.titleMedium)
         if (table.isEmpty()) Text("Empty. Add addresses from the results above.")
         table.forEachIndexed { index, entry ->
-            Column(Modifier.padding(vertical = 4.dp)) {
+            var editValue by remember(entry.address) { mutableStateOf(entry.value ?: entry.lockedValue ?: "") }
+            Column(Modifier.padding(vertical = 6.dp)) {
                 Text("${entry.label}  0x${entry.address.toString(16)}  (${entry.type.label})")
+                OutlinedTextField(value = editValue, onValueChange = { editValue = it }, label = { Text("Cheat value") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text(if (entry.lockedValue == null) "Not frozen" else "Frozen at ${entry.lockedValue}")
-                Row {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = {
-                        if (entry.lockedValue != null) table[index] = entry.copy(lockedValue = null)
-                        else if (newValue.isBlank() || entry.type.encode(newValue) == null) logText += "Type a valid New value first.\n"
-                        else table[index] = entry.copy(lockedValue = newValue)
+                        val c = conn; val p = pid; val bytes = entry.type.encode(editValue.trim())
+                        if (c == null || p == null) logText += "Connect to the game before writing.\\n"
+                        else if (bytes == null) logText += "Invalid value for ${entry.type.label}.\\n"
+                        else scope.launch {
+                            try {
+                                val ok = withContext(Dispatchers.IO) { c.writeMemory(p, entry.address, bytes) }
+                                if (ok) { table[index] = entry.copy(value = editValue.trim(), lockedValue = null); logText += "Wrote ${editValue.trim()} to 0x${entry.address.toString(16)}\\n" }
+                                else logText += "PS5Debug rejected write at 0x${entry.address.toString(16)}\\n"
+                            } catch (e: Exception) { captureError("Write value", e) }
+                        }
+                    }) { Text("Write") }
+                    Button(onClick = {
+                        if (entry.lockedValue != null) table[index] = entry.copy(value = editValue.trim(), lockedValue = null)
+                        else if (entry.type.encode(editValue.trim()) == null) logText += "Enter a valid value before freezing.\\n"
+                        else table[index] = entry.copy(value = editValue.trim(), lockedValue = editValue.trim())
                     }) { Text(if (entry.lockedValue == null) "Freeze" else "Unfreeze") }
                     Button(onClick = { table.removeAt(index) }) { Text("Delete") }
                 }
             }
+            Divider()
         }
 
         Spacer(Modifier.height(12.dp))
-        Text("6. Save and load", style = MaterialTheme.typography.titleMedium)
+        Text("6. Save and load · $gameFileKey.json", style = MaterialTheme.typography.titleMedium)
         Row {
             Button(onClick = {
-                try { File(context.filesDir, CHEAT_FILE_NAME).writeText(CheatFile.toJson(table.toList())); logText += "Saved ${table.size} entries\n" }
+                try { gameCheatFile.writeText(CheatFile.toJson(table.toList())); logText += "Saved ${table.size} entries\n" }
                 catch (e: Exception) { logText += "Save failed: ${e.message}\n" }
             }) { Text("Save table") }
             Button(onClick = {
                 try {
-                    val file = File(context.filesDir, CHEAT_FILE_NAME)
+                    val file = gameCheatFile
                     if (!file.exists()) { logText += "No saved file yet.\n"; return@Button }
                     table.clear(); table.addAll(CheatFile.fromJson(file.readText())); logText += "Loaded ${table.size} entries\n"
                 } catch (e: Exception) { logText += "Load failed: ${e.message}\n" }
