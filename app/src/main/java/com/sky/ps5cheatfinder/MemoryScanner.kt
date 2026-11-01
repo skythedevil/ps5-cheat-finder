@@ -21,13 +21,43 @@ class MemoryScanner(private val conn: Ps5Connection, private val pid: Int, val t
         val target = text.toDoubleOrNull() ?: Double.NaN; val targetBytes = type.encode(text)
         val kept = ArrayList<Candidate>()
         val source = candidates
-        for ((index, c) in source.withIndex()) {
-            val now = conn.readMemory(pid, c.address, type.size)
-            if (index % 25 == 0 || index == source.lastIndex) onProgress(index + 1, source.size)
-            if (now == null) continue
-            val n = type.toNumber(now); val old = type.toNumber(c.lastBytes)
-            val matches = when (mode) { CompareMode.EXACT -> targetBytes != null && now.contentEquals(targetBytes); CompareMode.BIGGER -> n > target; CompareMode.SMALLER -> n < target; CompareMode.INCREASED -> n > old; CompareMode.DECREASED -> n < old; CompareMode.CHANGED -> n != old; CompareMode.UNCHANGED -> n == old }
-            if (matches) kept.add(Candidate(c.address, now))
+        // Read nearby candidates in one request (up to 4 KiB), then slice each value
+        // locally. Sparse candidates naturally fall back to smaller individual reads.
+        // This uses only the already-supported PROC_READ command; no guessed protocol opcodes.
+        val maxBlock = 4096
+        var index = 0
+        while (index < source.size) {
+            val first = source[index]
+            var end = index + 1
+            val blockEndLimit = first.address + maxBlock
+            while (end < source.size && source[end].address >= first.address &&
+                source[end].address + type.size <= blockEndLimit) {
+                end++
+            }
+            val blockSize = (source[end - 1].address - first.address).toInt() + type.size
+            val block = conn.readMemory(pid, first.address, blockSize)
+            for (candidateIndex in index until end) {
+                val c = source[candidateIndex]
+                val offset = (c.address - first.address).toInt()
+                val now = if (block != null && offset >= 0 && offset + type.size <= block.size)
+                    block.copyOfRange(offset, offset + type.size)
+                else null
+                val n = if (now != null) type.toNumber(now) else Double.NaN
+                val old = type.toNumber(c.lastBytes)
+                val matches = now != null && when (mode) {
+                    CompareMode.EXACT -> targetBytes != null && now.contentEquals(targetBytes)
+                    CompareMode.BIGGER -> n > target
+                    CompareMode.SMALLER -> n < target
+                    CompareMode.INCREASED -> n > old
+                    CompareMode.DECREASED -> n < old
+                    CompareMode.CHANGED -> n != old
+                    CompareMode.UNCHANGED -> n == old
+                }
+                if (matches) kept.add(Candidate(c.address, now!!))
+                if (candidateIndex % 25 == 0 || candidateIndex == source.lastIndex)
+                    onProgress(candidateIndex + 1, source.size)
+            }
+            index = end
         }
         candidates = kept; return candidates.size
     }
