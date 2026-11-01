@@ -15,13 +15,16 @@ class MemoryScanner(private val conn: Ps5Connection, private val pid: Int, val t
         }
     }
 
-    fun nextScan(mode: CompareMode, text: String): Int {
+    fun nextScan(mode: CompareMode, text: String, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
         val needsNumber = mode == CompareMode.EXACT || mode == CompareMode.BIGGER || mode == CompareMode.SMALLER
         if (needsNumber && type.encode(text) == null) return -1
         val target = text.toDoubleOrNull() ?: Double.NaN; val targetBytes = type.encode(text)
         val kept = ArrayList<Candidate>()
-        for (c in candidates) {
-            val now = conn.readMemory(pid, c.address, type.size) ?: continue
+        val source = candidates
+        for ((index, c) in source.withIndex()) {
+            val now = conn.readMemory(pid, c.address, type.size)
+            if (index % 25 == 0 || index == source.lastIndex) onProgress(index + 1, source.size)
+            if (now == null) continue
             val n = type.toNumber(now); val old = type.toNumber(c.lastBytes)
             val matches = when (mode) { CompareMode.EXACT -> targetBytes != null && now.contentEquals(targetBytes); CompareMode.BIGGER -> n > target; CompareMode.SMALLER -> n < target; CompareMode.INCREASED -> n > old; CompareMode.DECREASED -> n < old; CompareMode.CHANGED -> n != old; CompareMode.UNCHANGED -> n == old }
             if (matches) kept.add(Candidate(c.address, now))
