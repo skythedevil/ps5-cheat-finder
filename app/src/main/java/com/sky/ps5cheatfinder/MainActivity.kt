@@ -3,6 +3,8 @@ package com.sky.ps5cheatfinder
 import android.os.Bundle
 import android.content.Intent
 import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -84,6 +86,7 @@ fun AppScreen() {
     var aobRadius by remember { mutableStateOf("128") }
     var aobResults by remember { mutableStateOf<List<Long>>(emptyList()) }
     var logText by remember { mutableStateOf("") }
+    var lastErrorReport by remember { mutableStateOf("") }
     val table = remember { mutableStateListOf<CheatEntry>() }
     val types = ValueType.entries
     val modes = CompareMode.entries
@@ -99,6 +102,13 @@ fun AppScreen() {
     var aiTesting by remember { mutableStateOf(false) }
     var aiQuestion by remember { mutableStateOf("") }
     val aiType = aiTypes[aiIndex]
+
+    fun captureError(stage: String, error: Throwable) {
+        val report = ErrorReporter.build(stage, error, ip, pid, type.label, mode.label, "1.10", logText)
+        lastErrorReport = report
+        val code = report.lineSequence().firstOrNull { it.startsWith("Error code:") } ?: "Error code: PS5CF-UNKNOWN"
+        logText += "$code\n$stage failed: ${error.message ?: error.javaClass.simpleName}\n"
+    }
 
     LaunchedEffect(isScanning) {
         if (isScanning) {
@@ -245,7 +255,7 @@ fun AppScreen() {
 
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White).padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("PS5 CHEAT FINDER", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-        Text("Installed version: 1.8", style = MaterialTheme.typography.bodySmall)
+        Text("Installed version: 1.10", style = MaterialTheme.typography.bodySmall)
         Text(updateInfo, style = MaterialTheme.typography.bodyMedium)
         Button(
             enabled = !checkingUpdate && !downloadingUpdate,
@@ -351,8 +361,8 @@ fun AppScreen() {
                     scanMessage = if (n == 0) "0 matches: PID $p is valid, but the exact value/type may not match. Try Float for decimal game values, then change the in-game value and scan again." else "Found $n candidates. Current values refresh automatically when fewer than 10 remain."
                     if (n == 0) logText += "No exact matches. Try the Float type for decimal values, check the displayed value carefully, and scan again after changing it in-game. PID $p was found, but that does not guarantee the selected type/value exists in memory.\n"
                 } catch (e: Exception) {
-                    scanMessage = "First scan failed: ${e.message ?: e.javaClass.simpleName}"
-                    logText += "First scan failed: ${e.message ?: e.javaClass.simpleName}\n"
+                    captureError("First scan", e)
+                    scanMessage = "First scan failed: ${e.message ?: e.javaClass.simpleName}. Tap Copy error report below."
                 } finally {
                     isScanning = false
                 }
@@ -363,13 +373,26 @@ fun AppScreen() {
             Text("Scan in progress: ${scanElapsedSeconds}s elapsed. Keep the app open.", style = MaterialTheme.typography.bodySmall)
         }
         Text(scanMessage, color = if (scanMessage.startsWith("0 matches") || scanMessage.startsWith("First scan failed")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+        if (lastErrorReport.isNotBlank()) {
+            Button(onClick = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("PS5 Cheat Finder error report", lastErrorReport))
+                logText += "Copied diagnostic error report to clipboard.\n"
+            }, modifier = Modifier.fillMaxWidth()) { Text("Copy error report with logs") }
+            Text("Copy this report and paste it here so the scan failure can be diagnosed.", style = MaterialTheme.typography.bodySmall)
+        }
         Button(onClick = {
             val s = scanner
             if (s == null) { logText += "Do a first scan first.\n"; return@Button }
             scope.launch {
-                val n = withContext(Dispatchers.IO) { s.nextScan(mode, searchText) }
-                if (n < 0) { logText += "This compare needs a valid number in the box.\n"; return@launch }
-                count = n; logText += "Next scan (${mode.label}): $n results\n"
+                try {
+                    val n = withContext(Dispatchers.IO) { s.nextScan(mode, searchText) }
+                    if (n < 0) { logText += "This compare needs a valid number in the box.\n"; return@launch }
+                    count = n; logText += "Next scan (${mode.label}): $n results\n"
+                } catch (e: Exception) {
+                    captureError("Next scan", e)
+                    scanMessage = "Next scan failed: ${e.message ?: e.javaClass.simpleName}. Tap Copy error report below."
+                }
             }
         }) { Text("Next scan") }
 
